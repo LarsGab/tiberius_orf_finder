@@ -39,7 +39,7 @@ params.varus_max_batches = (params.containsKey('varus_max_batches') && params.va
 params.braker_data_dir  = params.braker_data_dir  ?: null
 
 params.threads          = (params.threads ?: 8) as int
-params.chunk_len        = (params.chunk_len ?: 9999) as int
+params.chunk_len        = (params.containsKey('chunk_len') && params.chunk_len != null ? params.chunk_len : 9999) as int
 
 
 def die(msg) { log.error msg; System.exit(1) }

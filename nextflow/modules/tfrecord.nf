@@ -1,5 +1,7 @@
-// Chunk labelled transcripts into 9999-nt windows and write one TFRecord
-// shard per species.
+// Chunk labelled transcripts into fixed-length windows (--chunk_len, default
+// 9999 nt) and write one TFRecord shard per species.  Each chunk is stored as
+// an `input` tensor [L,6] (one-hot nt + pad channel) and an `output` tensor
+// [L,6] (one-hot label classes: IR, START, E1, E2, E0, STOP).
 
 process WRITE_TFRECORD {
     tag { species }

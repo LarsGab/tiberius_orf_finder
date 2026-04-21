@@ -1,5 +1,7 @@
-// Write a VARUS parameter file, then run VARUS to produce an aligned BAM.
-// Adapted from /c/Users/lgabr/git/scripts/main.nf for the ORF-finder pipeline.
+// Write a VARUSparameters.txt config file (MAKE_VARUS_PARAMS), then run VARUS
+// to download RNA-seq reads from SRA and align them with HISAT2, producing a
+// merged BAM (RUN_VARUS).  The runVARUS.pl entry point is resolved from
+// --varus_runpl (if given) or --varus_dir/runVARUS.pl.
 
 process MAKE_VARUS_PARAMS {
     tag { species }

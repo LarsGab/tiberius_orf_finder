@@ -1,0 +1,10 @@
+
+graphify-out/
+!graphify-out/GRAPH_REPORT.md
+
+__pycache__/
+*.pyc
+
+.claude/settings.local.json
+
+.experiments/*.log

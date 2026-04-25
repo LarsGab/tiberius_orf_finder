@@ -2,12 +2,12 @@
 
 data:
   chunk_len: 9999
-  batch_size: 32
+  batch_size: 200
   shuffle_buffer: 2048
 
 model:
   # Pick one of: cnn_lstm, cnn_transformer, cnn_tcn, cnn_unet
-  type: cnn_lstm
+  type: cnn_tcn
 
   # Shared CNN stem (used by all architectures)
   conv_filters: 64
@@ -45,7 +45,7 @@ model:
 
 training:
   learning_rate: 1.0e-3
-  epochs: 50
+  epochs: 200
   steps_per_epoch: 2000
   class_weights: [1, 10, 1, 1, 1, 10]
 

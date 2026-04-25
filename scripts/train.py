@@ -1,4 +1,4 @@
-"""Train the tiberius_orf BiLSTM model.
+"""Train the tiberius_orf model.
 
 CLI::
 
@@ -16,7 +16,6 @@ import csv
 import sys
 from pathlib import Path
 
-# Add src/ to path so the package is importable without installing
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import yaml
@@ -55,7 +54,9 @@ def _pack_y(ds):
     import tensorflow as tf
     def _pack(x, y, pad_mask):
         pad_float = tf.cast(pad_mask[..., tf.newaxis], tf.float32)
-        return x, tf.concat([y, pad_float], axis=-1)
+        packed = tf.concat([y, pad_float], axis=-1)
+        packed.set_shape([None, None, 7])
+        return x, packed
     return ds.map(_pack, num_parallel_calls=tf.data.AUTOTUNE)
 
 
@@ -63,7 +64,6 @@ def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     cfg = _load_config(args.config)
 
-    # Apply CLI overrides
     dc = cfg["data"]
     mc = cfg["model"]
     tc = cfg["training"]
@@ -80,8 +80,8 @@ def main(argv: list[str] | None = None) -> int:
 
     import tensorflow as tf
     from tiberius_orf.data.dataset import make_dataset
-    from tiberius_orf.model.model import build_model
-    from tiberius_orf.model.loss import MaskedCategoricalCrossentropy
+    from tiberius_orf.model.model import build_model_from_config
+    from tiberius_orf.model.loss import MaskedCategoricalCrossentropy, MaskedAccuracy
 
     print(f"TF version: {tf.__version__}", flush=True)
 
@@ -101,30 +101,24 @@ def main(argv: list[str] | None = None) -> int:
         repeat=False,
     ))
 
-    model = build_model(
-        chunk_len=dc["chunk_len"],
-        lstm_units=mc["lstm_units"],
-        lstm_layers=mc["lstm_layers"],
-        dropout=mc["dropout"],
-        use_conv_stem=mc["use_conv_stem"],
-        conv_filters=mc["conv_filters"],
-        conv_kernel=mc["conv_kernel"],
-    )
+    model = build_model_from_config(cfg, chunk_len=dc["chunk_len"])
+    print(f"Model type: {mc['type']}", flush=True)
     model.summary()
 
-    loss_fn = MaskedCategoricalCrossentropy(
-        class_weights=tc["class_weights"]
-    )
+    loss_fn = MaskedCategoricalCrossentropy(class_weights=tc["class_weights"])
     optimizer = tf.keras.optimizers.Adam(learning_rate=tc["learning_rate"])
-    model.compile(optimizer=optimizer, loss=loss_fn)
+    model.compile(
+        optimizer=optimizer,
+        loss=loss_fn,
+        metrics=[MaskedAccuracy(name="accuracy")],
+    )
 
-    checkpoint_path = args.outdir / "checkpoint.weights.h5"
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
-            filepath=str(checkpoint_path),
-            save_best_only=cc["save_best_only"],
-            monitor=cc["monitor"],
+            filepath=str(args.outdir / "epoch_{epoch:02d}.weights.h5"),
+            save_best_only=False,
             save_weights_only=True,
+            save_freq="epoch",
             verbose=1,
         ),
         tf.keras.callbacks.CSVLogger(str(args.outdir / "train_log.tsv"),
@@ -132,19 +126,14 @@ def main(argv: list[str] | None = None) -> int:
         tf.keras.callbacks.TerminateOnNaN(),
     ]
 
-    # Count steps per epoch from manifest line count (approximate)
-    n_train = sum(1 for _ in open(args.train_manifest) if _.strip())
-    steps_per_epoch = max(1, n_train // dc["batch_size"])
-
     model.fit(
         train_ds,
         epochs=tc["epochs"],
-        steps_per_epoch=steps_per_epoch,
+        steps_per_epoch=tc["steps_per_epoch"],
         validation_data=val_ds,
         callbacks=callbacks,
     )
 
-    # Save final model weights
     model.save_weights(str(args.outdir / "final.weights.h5"))
     print(f"Training complete. Outputs in {args.outdir}", flush=True)
     return 0

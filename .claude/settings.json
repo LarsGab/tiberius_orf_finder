@@ -1,21 +1,25 @@
 {
-  "_comment": "Copy this file to <your-project>/.claude/settings.json. Project-specific permission additions and the hook paths. Safe to commit.",
-
   "permissions": {
     "allow": [
       "Bash(snakemake -n *)",
       "Bash(nextflow run * -preview)",
       "Bash(pytest tests/:*)",
-      "Bash(pytest -k:*)"
+      "Bash(pytest -k:*)",
+      "Bash(scp \"c:/Users/lgabr/git/tiberius_orf_finder/nextflow/submit_training.sh\" brain:/home/gabriell/tiberius_orf_finder/submit_training.sh)",
+      "Bash(scp \"c:/Users/lgabr/git/tiberius_orf_finder/nextflow/submit_val.sh\" brain:/home/gabriell/tiberius_orf_finder/submit_val.sh)",
+      "Bash(scp \"c:/Users/lgabr/git/tiberius_orf_finder/nextflow/submit_test.sh\" brain:/home/gabriell/tiberius_orf_finder/submit_test.sh)",
+      "Bash(echo \"EXIT:$?\")"
     ]
   },
-
   "hooks": {
     "PostToolUse": [
       {
         "matcher": "Write|Edit",
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/graphify-update-remind.sh" }
+          {
+            "type": "command",
+            "command": ".claude/hooks/graphify-update-remind.sh"
+          }
         ]
       }
     ],
@@ -23,22 +27,35 @@
       {
         "matcher": "Glob|Grep",
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/graphify-context.sh" }
+          {
+            "type": "command",
+            "command": ".claude/hooks/graphify-context.sh"
+          }
         ]
       },
       {
         "matcher": "Write|Edit",
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/block-raw-data-writes.sh" }
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-raw-data-writes.sh"
+          }
         ]
       },
       {
         "matcher": "Bash",
         "hooks": [
-          { "type": "command", "command": ".claude/hooks/no-auto-commit.sh" },
-          { "type": "command", "command": ".claude/hooks/block-rm-rf.sh" }
+          {
+            "type": "command",
+            "command": ".claude/hooks/no-auto-commit.sh"
+          },
+          {
+            "type": "command",
+            "command": ".claude/hooks/block-rm-rf.sh"
+          }
         ]
       }
     ]
-  }
+  },
+  "_comment": "Copy this file to <your-project>/.claude/settings.json. Project-specific permission additions and the hook paths. Safe to commit."
 }

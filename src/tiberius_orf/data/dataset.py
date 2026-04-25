@@ -79,6 +79,10 @@ def make_dataset(
         y = tf.cast(
             tf.io.parse_tensor(parsed["output"], out_type=tf.uint8), tf.float32
         )  # [L, 6]
+        # tf.io.parse_tensor returns a fully unknown TensorShape; restore static
+        # dims so BiLSTM / Keras internals can call .as_list() without error.
+        x.set_shape([chunk_len, 6])
+        y.set_shape([chunk_len, 6])
         pad_mask = tf.cast(x[..., 5], tf.bool)  # True where PAD
         return x, y, pad_mask
 
@@ -88,6 +92,8 @@ def make_dataset(
     ds = ds.map(_parse, num_parallel_calls=tf.data.AUTOTUNE)
     if repeat:
         ds = ds.repeat()
-    ds = ds.batch(batch_size, drop_remainder=False)
+    # drop_remainder=True: keep batch dim static so BiLSTM doesn't hit
+    # "as_list() is not defined on an unknown TensorShape" in TF 2.17.
+    ds = ds.batch(batch_size, drop_remainder=True)
     ds = ds.prefetch(prefetch if prefetch is not None else tf.data.AUTOTUNE)
     return ds

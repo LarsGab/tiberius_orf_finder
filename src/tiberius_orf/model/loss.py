@@ -75,3 +75,35 @@ class MaskedCategoricalCrossentropy(tf.keras.losses.Loss):
         cfg = super().get_config()
         cfg["class_weights"] = self.class_weights
         return cfg
+
+
+class MaskedAccuracy(tf.keras.metrics.Metric):
+    """Per-position classification accuracy, ignoring padded positions.
+
+    Expects the same packed y_true format as MaskedCategoricalCrossentropy:
+    [B, L, 7] with labels in [..., :6] and pad flag in [..., 6].
+    """
+
+    def __init__(self, name: str = "accuracy", **kwargs):
+        super().__init__(name=name, **kwargs)
+        self.correct = self.add_weight(name="correct", initializer="zeros")
+        self.total   = self.add_weight(name="total",   initializer="zeros")
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        labels   = y_true[..., :6]
+        pad_mask = tf.cast(y_true[..., 6], tf.bool)
+        valid    = tf.cast(~pad_mask, tf.float32)     # [B, L]
+
+        true_cls = tf.argmax(labels, axis=-1)          # [B, L]
+        pred_cls = tf.argmax(y_pred, axis=-1)          # [B, L]
+        hits     = tf.cast(tf.equal(true_cls, pred_cls), tf.float32)
+
+        self.correct.assign_add(tf.reduce_sum(hits * valid))
+        self.total.assign_add(tf.reduce_sum(valid))
+
+    def result(self):
+        return self.correct / (self.total + 1e-8)
+
+    def reset_state(self):
+        self.correct.assign(0.0)
+        self.total.assign(0.0)

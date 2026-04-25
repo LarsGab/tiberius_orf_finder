@@ -72,20 +72,12 @@ def main(argv: list[str] | None = None) -> int:
 
     import tensorflow as tf
     from tiberius_orf.data.dataset import make_dataset
-    from tiberius_orf.model.model import build_model
+    from tiberius_orf.model.model import build_model_from_config
     from tiberius_orf.hmm.viterbi import viterbi_decode_batch
 
-    model = build_model(
-        chunk_len=dc["chunk_len"],
-        lstm_units=mc["lstm_units"],
-        lstm_layers=mc["lstm_layers"],
-        dropout=mc["dropout"],
-        use_conv_stem=mc["use_conv_stem"],
-        conv_filters=mc["conv_filters"],
-        conv_kernel=mc["conv_kernel"],
-    )
+    model = build_model_from_config(cfg, chunk_len=dc["chunk_len"])
     model.load_weights(str(args.weights))
-    print(f"Loaded weights from {args.weights}", flush=True)
+    print(f"Loaded {mc['type']} weights from {args.weights}", flush=True)
 
     test_ds = make_dataset(
         args.test_manifest,

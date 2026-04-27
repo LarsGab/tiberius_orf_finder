@@ -6,7 +6,7 @@ build-backend = "hatchling.build"
 name = "tiberius_orf_finder"
 version = "0.0.1"
 authors = [
-  { name="Lars Gabriel", email="lgabriel23@gmx.de" },
+  { name="Lars Gabriel", email="lars.gabriel@uni-greifswald.de" },
 ]
 description = "Deep-learning ORF finder for assembled transcripts (Tiberius-derived)."
 readme = "README.md"
@@ -21,10 +21,10 @@ dependencies = [
 test = ["pytest"]
 from_source = [
   "tiberius",
-  "bricks2marble",
+  "bricks2marble[tf]",
   "hidten",
   "numpy",
-  "tensorflow[and-cuda]>2.16,<2.20",
+  "tensorflow[and-cuda]>=2.17,<2.20",
   "biopython",
   "pandas",
 ]

@@ -12,7 +12,6 @@ CLI::
 from __future__ import annotations
 
 import argparse
-import csv
 import sys
 from pathlib import Path
 
@@ -60,6 +59,95 @@ def _pack_y(ds):
     return ds.map(_pack, num_parallel_calls=tf.data.AUTOTUNE)
 
 
+class WarmupCosineDecay(object):
+    """Linear warmup then cosine decay; implements __call__ for Keras LR schedule."""
+
+    def __init__(self, peak_lr: float, warmup_steps: int, total_steps: int):
+        import tensorflow as tf
+        self.peak_lr = tf.cast(peak_lr, tf.float32)
+        self.warmup_steps = tf.cast(warmup_steps, tf.float32)
+        self.total_steps  = tf.cast(total_steps,  tf.float32)
+
+    def __call__(self, step):
+        import tensorflow as tf
+        step = tf.cast(step, tf.float32)
+        warmup_lr = self.peak_lr * (step / tf.maximum(self.warmup_steps, 1.0))
+        progress  = (step - self.warmup_steps) / tf.maximum(
+            self.total_steps - self.warmup_steps, 1.0
+        )
+        cosine_lr = self.peak_lr * 0.5 * (1.0 + tf.cos(tf.constant(3.14159265) * progress))
+        return tf.where(step < self.warmup_steps, warmup_lr, cosine_lr)
+
+    def get_config(self):
+        return {
+            "peak_lr":      float(self.peak_lr),
+            "warmup_steps": int(self.warmup_steps),
+            "total_steps":  int(self.total_steps),
+        }
+
+
+def _build_optimizer(tc: dict, model_type: str) -> object:
+    import tensorflow as tf
+
+    lr     = tc["learning_rate"]
+    wd     = tc.get("weight_decay", 0.0)
+    warmup = tc.get("warmup_steps", 0)
+
+    if warmup > 0:
+        total_steps = tc["epochs"] * tc["steps_per_epoch"]
+        lr_schedule = WarmupCosineDecay(lr, warmup, total_steps)
+    else:
+        lr_schedule = lr
+
+    if wd > 0.0:
+        return tf.keras.optimizers.AdamW(learning_rate=lr_schedule, weight_decay=wd)
+    return tf.keras.optimizers.Adam(learning_rate=lr_schedule)
+
+
+def _build_callbacks(tc: dict, outdir: Path) -> list:
+    import tensorflow as tf
+
+    cbs = [
+        tf.keras.callbacks.ModelCheckpoint(
+            filepath=str(outdir / "epoch_{epoch:02d}.weights.h5"),
+            save_best_only=False,
+            save_weights_only=True,
+            save_freq="epoch",
+            verbose=0,
+        ),
+        tf.keras.callbacks.ModelCheckpoint(
+            filepath=str(outdir / "best.weights.h5"),
+            save_best_only=True,
+            monitor="val_loss",
+            save_weights_only=True,
+            verbose=1,
+        ),
+        tf.keras.callbacks.CSVLogger(str(outdir / "train_log.tsv"), separator="\t"),
+        tf.keras.callbacks.TerminateOnNaN(),
+    ]
+
+    es_cfg = tc.get("early_stopping", {})
+    if es_cfg:
+        cbs.append(tf.keras.callbacks.EarlyStopping(
+            monitor=es_cfg.get("monitor", "val_loss"),
+            patience=es_cfg.get("patience", 20),
+            restore_best_weights=True,
+            verbose=1,
+        ))
+
+    lrr_cfg = tc.get("lr_reduce", {})
+    if lrr_cfg:
+        cbs.append(tf.keras.callbacks.ReduceLROnPlateau(
+            monitor=lrr_cfg.get("monitor", "val_loss"),
+            patience=lrr_cfg.get("patience", 7),
+            factor=lrr_cfg.get("factor", 0.5),
+            min_lr=lrr_cfg.get("min_lr", 1e-6),
+            verbose=1,
+        ))
+
+    return cbs
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     cfg = _load_config(args.config)
@@ -67,7 +155,6 @@ def main(argv: list[str] | None = None) -> int:
     dc = cfg["data"]
     mc = cfg["model"]
     tc = cfg["training"]
-    cc = cfg["checkpointing"]
 
     if args.epochs is not None:
         tc["epochs"] = args.epochs
@@ -81,7 +168,9 @@ def main(argv: list[str] | None = None) -> int:
     import tensorflow as tf
     from tiberius_orf.data.dataset import make_dataset
     from tiberius_orf.model.model import build_model_from_config
-    from tiberius_orf.model.loss import MaskedCategoricalCrossentropy, MaskedAccuracy
+    from tiberius_orf.model.loss import (
+        MaskedCategoricalCrossentropy, MaskedAccuracy, all_class_f1_metrics,
+    )
 
     print(f"TF version: {tf.__version__}", flush=True)
 
@@ -105,33 +194,19 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Model type: {mc['type']}", flush=True)
     model.summary()
 
-    loss_fn = MaskedCategoricalCrossentropy(class_weights=tc["class_weights"])
-    optimizer = tf.keras.optimizers.Adam(learning_rate=tc["learning_rate"])
+    optimizer = _build_optimizer(tc, mc["type"])
     model.compile(
         optimizer=optimizer,
-        loss=loss_fn,
-        metrics=[MaskedAccuracy(name="accuracy")],
+        loss=MaskedCategoricalCrossentropy(class_weights=tc["class_weights"]),
+        metrics=[MaskedAccuracy(name="accuracy")] + all_class_f1_metrics(),
     )
-
-    callbacks = [
-        tf.keras.callbacks.ModelCheckpoint(
-            filepath=str(args.outdir / "epoch_{epoch:02d}.weights.h5"),
-            save_best_only=False,
-            save_weights_only=True,
-            save_freq="epoch",
-            verbose=1,
-        ),
-        tf.keras.callbacks.CSVLogger(str(args.outdir / "train_log.tsv"),
-                                     separator="\t"),
-        tf.keras.callbacks.TerminateOnNaN(),
-    ]
 
     model.fit(
         train_ds,
         epochs=tc["epochs"],
         steps_per_epoch=tc["steps_per_epoch"],
         validation_data=val_ds,
-        callbacks=callbacks,
+        callbacks=_build_callbacks(tc, args.outdir),
     )
 
     model.save_weights(str(args.outdir / "final.weights.h5"))

@@ -107,3 +107,53 @@ class MaskedAccuracy(tf.keras.metrics.Metric):
     def reset_state(self):
         self.correct.assign(0.0)
         self.total.assign(0.0)
+
+
+# Label order: IR(0), START(1), E1(2), E2(3), E0(4), STOP(5)
+CLASS_NAMES = ["IR", "START", "E1", "E2", "E0", "STOP"]
+
+
+class MaskedF1Score(tf.keras.metrics.Metric):
+    """Per-class F1 score at non-padded positions.
+
+    Uses the same packed y_true format: [B, L, 7], labels in [..., :6],
+    pad flag in [..., 6].  Instantiate one per class.
+    """
+
+    def __init__(self, class_idx: int, name: str | None = None, **kwargs):
+        super().__init__(name=name or f"f1_{CLASS_NAMES[class_idx]}", **kwargs)
+        self.class_idx = class_idx
+        self.tp = self.add_weight(name="tp", initializer="zeros")
+        self.fp = self.add_weight(name="fp", initializer="zeros")
+        self.fn = self.add_weight(name="fn", initializer="zeros")
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        labels   = y_true[..., :6]
+        pad_mask = tf.cast(y_true[..., 6], tf.bool)
+        valid    = tf.cast(~pad_mask, tf.float32)      # [B, L]
+
+        true_cls = tf.cast(tf.argmax(labels, axis=-1), tf.int32)  # [B, L]
+        pred_cls = tf.cast(tf.argmax(y_pred, axis=-1), tf.int32)  # [B, L]
+
+        c = tf.cast(self.class_idx, tf.int32)
+        true_pos = tf.cast(tf.equal(true_cls, c), tf.float32) * valid
+        pred_pos = tf.cast(tf.equal(pred_cls, c), tf.float32) * valid
+
+        self.tp.assign_add(tf.reduce_sum(true_pos * pred_pos))
+        self.fp.assign_add(tf.reduce_sum(pred_pos * (1.0 - true_pos)))
+        self.fn.assign_add(tf.reduce_sum(true_pos * (1.0 - pred_pos)))
+
+    def result(self):
+        p = self.tp / (self.tp + self.fp + 1e-8)
+        r = self.tp / (self.tp + self.fn + 1e-8)
+        return 2.0 * p * r / (p + r + 1e-8)
+
+    def reset_state(self):
+        self.tp.assign(0.0)
+        self.fp.assign(0.0)
+        self.fn.assign(0.0)
+
+
+def all_class_f1_metrics() -> list[MaskedF1Score]:
+    """Return one MaskedF1Score metric per label class."""
+    return [MaskedF1Score(i) for i in range(len(CLASS_NAMES))]

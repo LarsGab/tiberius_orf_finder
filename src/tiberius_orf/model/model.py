@@ -1,4 +1,4 @@
-"""Dispatcher for the four ORF-finder architectures."""
+"""Dispatcher for the ORF-finder architectures."""
 
 from __future__ import annotations
 
@@ -6,15 +6,11 @@ from tensorflow import keras
 
 from .cnn_lstm import build_cnn_lstm
 from .cnn_transformer import build_cnn_transformer
-from .cnn_tcn import build_cnn_tcn
-from .cnn_unet import build_cnn_unet
 
 
 _BUILDERS = {
     "cnn_lstm":        build_cnn_lstm,
     "cnn_transformer": build_cnn_transformer,
-    "cnn_tcn":         build_cnn_tcn,
-    "cnn_unet":        build_cnn_unet,
 }
 
 

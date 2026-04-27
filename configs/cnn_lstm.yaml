@@ -1,4 +1,4 @@
-# Hyperparameters for tiberius_orf_finder training.
+# CNN-LSTM training config (run002: regularised, early stopping).
 
 data:
   chunk_len: 9999
@@ -6,10 +6,8 @@ data:
   shuffle_buffer: 2048
 
 model:
-  # Pick one of: cnn_lstm, cnn_transformer, cnn_tcn, cnn_unet
   type: cnn_lstm
 
-  # Shared CNN stem (used by all architectures)
   conv_filters: 64
   conv_kernel: 9
   conv_layers: 2
@@ -18,7 +16,7 @@ model:
     pool_size: 9
     lstm_units: 200
     lstm_layers: 2
-    dropout: 0.1
+    dropout: 0.3       # raised from 0.1; also applied after last LSTM layer
     head_hidden: 32
 
   cnn_transformer:
@@ -30,24 +28,22 @@ model:
     dropout: 0.1
     head_hidden: 32
 
-  cnn_tcn:
-    tcn_filters: 64
-    tcn_kernel: 5
-    tcn_layers: 8
-    dropout: 0.1
-
-  cnn_unet:
-    base_filters: 64
-    unet_kernel: 5
-    depth: 2
-    pool_size: 3
-    bottleneck_dropout: 0.1
-
 training:
   learning_rate: 1.0e-3
-  epochs: 200
+  weight_decay: 1.0e-4  # AdamW decoupled weight decay
+  epochs: 150
   steps_per_epoch: 2000
   class_weights: [1, 10, 1, 1, 1, 10]
+
+  early_stopping:
+    monitor: val_loss
+    patience: 20
+
+  lr_reduce:
+    monitor: val_loss
+    patience: 7
+    factor: 0.5
+    min_lr: 1.0e-6
 
 checkpointing:
   save_every_epoch: true

@@ -38,7 +38,7 @@ def build_cnn_lstm(
                               dropout=dropout, recurrent_dropout=0.0),
             name=f"bilstm_{i+1}",
         )(x)
-        if dropout > 0.0 and i < lstm_layers - 1:
+        if dropout > 0.0:
             x = keras.layers.Dropout(dropout, name=f"drop_{i+1}")(x)
 
     x = keras.layers.Dense(pool_size * head_hidden, activation="relu", name="post_lstm_dense")(x)

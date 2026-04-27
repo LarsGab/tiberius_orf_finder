@@ -10,7 +10,7 @@ authors = [
 ]
 description = "Deep-learning ORF finder for assembled transcripts (Tiberius-derived)."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 license = "MIT"
 license-files = ["LICEN[CS]E*"]
 dependencies = [
@@ -24,7 +24,7 @@ from_source = [
   "bricks2marble",
   "hidten",
   "numpy",
-  "tensorflow[and-cuda]>2.12",
+  "tensorflow[and-cuda]>2.16,<2.20",
   "biopython",
   "pandas",
 ]

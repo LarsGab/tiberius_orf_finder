@@ -59,33 +59,6 @@ def _pack_y(ds):
     return ds.map(_pack, num_parallel_calls=tf.data.AUTOTUNE)
 
 
-class WarmupCosineDecay(object):
-    """Linear warmup then cosine decay; implements __call__ for Keras LR schedule."""
-
-    def __init__(self, peak_lr: float, warmup_steps: int, total_steps: int):
-        import tensorflow as tf
-        self.peak_lr = tf.cast(peak_lr, tf.float32)
-        self.warmup_steps = tf.cast(warmup_steps, tf.float32)
-        self.total_steps  = tf.cast(total_steps,  tf.float32)
-
-    def __call__(self, step):
-        import tensorflow as tf
-        step = tf.cast(step, tf.float32)
-        warmup_lr = self.peak_lr * (step / tf.maximum(self.warmup_steps, 1.0))
-        progress  = (step - self.warmup_steps) / tf.maximum(
-            self.total_steps - self.warmup_steps, 1.0
-        )
-        cosine_lr = self.peak_lr * 0.5 * (1.0 + tf.cos(tf.constant(3.14159265) * progress))
-        return tf.where(step < self.warmup_steps, warmup_lr, cosine_lr)
-
-    def get_config(self):
-        return {
-            "peak_lr":      float(self.peak_lr),
-            "warmup_steps": int(self.warmup_steps),
-            "total_steps":  int(self.total_steps),
-        }
-
-
 def _build_optimizer(tc: dict, model_type: str) -> object:
     import tensorflow as tf
 
@@ -95,7 +68,14 @@ def _build_optimizer(tc: dict, model_type: str) -> object:
 
     if warmup > 0:
         total_steps = tc["epochs"] * tc["steps_per_epoch"]
-        lr_schedule = WarmupCosineDecay(lr, warmup, total_steps)
+        # Keras 3 CosineDecay: linear warmup from 0 -> lr over warmup_steps,
+        # then cosine decay over the remaining steps.
+        lr_schedule = tf.keras.optimizers.schedules.CosineDecay(
+            initial_learning_rate=0.0,
+            decay_steps=total_steps - warmup,
+            warmup_target=lr,
+            warmup_steps=warmup,
+        )
     else:
         lr_schedule = lr
 

@@ -54,6 +54,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="Output GTF path.")
     ap.add_argument("--batch-size", type=int, default=200,
                     help="Inference batch size (default 200).")
+    ap.add_argument("--parallel", type=int, default=100,
+                    help="HMM parallel scan factor (default 100). Per-tx "
+                         "sequences are right-padded to a multiple of this.")
     ap.add_argument("--threads", type=int, default=4,
                     help="Threads for stringtie/gffread.")
     ap.add_argument("--tmp-dir", type=Path, default=None,
@@ -125,15 +128,18 @@ def main(argv: list[str] | None = None) -> int:
 
     # 3. load model
     import tensorflow as tf  # noqa: F401
-    from tiberius_orf.model.model import build_model_from_config
-    from tiberius_orf.hmm.viterbi import viterbi_decode
     from tiberius_orf.data.chunk_tfrecord import read_fasta
-    from tiberius_orf.data.label_transcripts import parse_stringtie_gtf
     from tiberius_orf.data.gtf_writer import write_gtf
+    from tiberius_orf.data.label_transcripts import parse_stringtie_gtf
+    from tiberius_orf.hmm.decode import build_decoder_hmm, viterbi_decode_one
+    from tiberius_orf.model.model import build_model_from_config
 
     model = build_model_from_config(cfg, chunk_len=dc["chunk_len"])
     model.load_weights(str(args.weights))
     print(f"Loaded {mc['type']} weights from {args.weights}", flush=True)
+
+    hmm = build_decoder_hmm(parallel=args.parallel)
+    print(f"Built OrfAnnotationHMM (parallel={args.parallel})", flush=True)
 
     # 4. load sequences + exon structure
     sequences   = read_fasta(transcripts_fa)
@@ -167,19 +173,17 @@ def main(argv: list[str] | None = None) -> int:
         for (tid, ci, _), lg in zip(batch, out):
             logits_per_tx[tid][ci] = lg
 
-    # 6. stitch logits per transcript, log-softmax, Viterbi, truncate
+    # 6. stitch logits + nucleotides per transcript, truncate to true length, Viterbi
     print("Viterbi decoding per transcript", flush=True)
     pred_labels: dict[str, np.ndarray] = {}
     for tx_id, by_ci in logits_per_tx.items():
         n = len(chunks_per_tx[tx_id])
         ordered_logits = np.concatenate([by_ci[ci] for ci in range(n)], axis=0)
-        m = ordered_logits.max(axis=-1, keepdims=True)
-        log_probs = ordered_logits - m - np.log(
-            np.exp(ordered_logits - m).sum(axis=-1, keepdims=True)
-        )
-        pred_seq = viterbi_decode(log_probs)              # [n*L]
+        ordered_x = np.concatenate(chunks_per_tx[tx_id], axis=0)
         true_len = len(sequences[tx_id])
-        pred_labels[tx_id] = pred_seq[:true_len].astype(np.int32)
+        nuc = ordered_x[:true_len, :5].astype(np.float32)
+        logits = ordered_logits[:true_len].astype(np.float32)
+        pred_labels[tx_id] = viterbi_decode_one(hmm, logits, nuc)
 
     # 7. write genomic GTF
     args.out.parent.mkdir(parents=True, exist_ok=True)

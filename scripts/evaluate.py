@@ -35,6 +35,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--config", type=Path, default=Path("configs/default.yaml"))
     ap.add_argument("--out", type=Path, default=None,
                     help="Write per-class metrics to this TSV (optional).")
+    ap.add_argument("--parallel", type=int, default=100,
+                    help="HMM parallel scan factor (default 100). Sequences "
+                         "are right-padded to a multiple of this value.")
     return ap.parse_args(argv)
 
 
@@ -69,14 +72,17 @@ def main(argv: list[str] | None = None) -> int:
         cfg = yaml.safe_load(fh)
     dc = cfg["data"]
 
-    import tensorflow as tf
+    import tensorflow as tf  # noqa: F401
     from tiberius_orf.data.dataset import make_dataset
+    from tiberius_orf.hmm.decode import build_decoder_hmm, viterbi_decode_batch
     from tiberius_orf.model.model import build_model_from_config
-    from tiberius_orf.hmm.viterbi import viterbi_decode_batch
 
     model = build_model_from_config(cfg, chunk_len=dc["chunk_len"])
     model.load_weights(str(args.weights))
     print(f"Loaded weights from {args.weights}", flush=True)
+
+    hmm = build_decoder_hmm(parallel=args.parallel)
+    print(f"Built OrfAnnotationHMM (parallel={args.parallel})", flush=True)
 
     test_ds = make_dataset(
         args.test_manifest,
@@ -96,10 +102,11 @@ def main(argv: list[str] | None = None) -> int:
     for x_batch, y_batch, pad_mask in test_ds:
         y_np  = y_batch.numpy()
         pm_np = pad_mask.numpy()
+        x_np  = x_batch.numpy()
 
-        logits   = model(x_batch, training=False).numpy()
-        log_prob = tf.nn.log_softmax(logits).numpy()
-        pred     = viterbi_decode_batch(log_prob)   # [B, L] int
+        logits = model(x_batch, training=False).numpy()
+        nuc    = x_np[..., :5]                      # [B, L, 5] ACGTN one-hot
+        pred   = viterbi_decode_batch(hmm, logits, nuc, pad_mask=pm_np)
 
         true_cls = np.argmax(y_np, axis=-1)         # [B, L] int
         valid    = ~pm_np                           # [B, L] bool

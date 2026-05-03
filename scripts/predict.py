@@ -40,6 +40,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="Output root; one subdir per species.")
     ap.add_argument("--batch-size", type=int, default=8,
                     help="Inference batch size (default 8).")
+    ap.add_argument("--parallel", type=int, default=100,
+                    help="HMM parallel scan factor (default 100). Per-tx "
+                         "sequences are right-padded to a multiple of this.")
     return ap.parse_args(argv)
 
 
@@ -84,10 +87,12 @@ def _predict_per_tx(
     chunks_by_tx: dict[str, list[tuple[int, np.ndarray]]],
     chunk_len: int,
     batch_size: int,
+    parallel: int,
 ) -> dict[str, np.ndarray]:
     """Run model + Viterbi-decode the full-transcript logit sequence per tx_id."""
-    import tensorflow as tf
-    from tiberius_orf.hmm.viterbi import viterbi_decode
+    from tiberius_orf.hmm.decode import build_decoder_hmm, viterbi_decode_one
+
+    hmm = build_decoder_hmm(parallel=parallel)
 
     out: dict[str, np.ndarray] = {}
     tx_ids = sorted(chunks_by_tx)
@@ -111,14 +116,11 @@ def _predict_per_tx(
         ordered_logits = np.concatenate(
             [logits_buf[tid][ci] for ci, _ in chunks_by_tx[tid]], axis=0
         )
-        m = ordered_logits.max(axis=-1, keepdims=True)
-        log_probs = ordered_logits - m - np.log(
-            np.exp(ordered_logits - m).sum(axis=-1, keepdims=True)
-        )
-        pred_seq = viterbi_decode(log_probs)
         valid = ordered_x[..., 5] != 1
         true_len = int(valid.sum())
-        out[tid] = pred_seq[:true_len].astype(np.int32)
+        nuc = ordered_x[:true_len, :5].astype(np.float32)
+        logits = ordered_logits[:true_len].astype(np.float32)
+        out[tid] = viterbi_decode_one(hmm, logits, nuc)
 
     return out
 
@@ -173,7 +175,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  reading chunks from {tfrec_path}", flush=True)
         chunks = _read_chunks_from_tfrecord(tfrec_path, dc["chunk_len"])
         print(f"  inference on {len(chunks)} transcripts", flush=True)
-        pred_labels = _predict_per_tx(model, chunks, dc["chunk_len"], args.batch_size)
+        pred_labels = _predict_per_tx(
+            model, chunks, dc["chunk_len"], args.batch_size, args.parallel,
+        )
 
         species_out = args.out_dir / species
         species_out.mkdir(parents=True, exist_ok=True)

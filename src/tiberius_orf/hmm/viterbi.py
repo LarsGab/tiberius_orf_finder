@@ -1,14 +1,22 @@
 """Viterbi decoder for the 6-state ORF label HMM.
 
-States (matching label_transcripts.py):
+States (matching ``label_transcripts.build_labels``):
     0 IR    1 START    2 E1    3 E2    4 E0    5 STOP
+
+A canonical CDS of length N labelled by ``build_labels`` is::
+
+    START E1 E2 E0 E1 E2 E0 ... E1 STOP
+
+so the codon containing the stop is ``(E0, E1, STOP)`` and the transition
+immediately before STOP is ``E1 -> STOP`` (matching Tiberius
+``state_transitions_simple``).
 
 Valid transitions (all others have -inf log-probability):
     IR    -> IR, START
     START -> E1
-    E1    -> E2
+    E1    -> E2, STOP
     E2    -> E0
-    E0    -> E1, STOP
+    E0    -> E1
     STOP  -> IR
 
 Usage::
@@ -34,9 +42,9 @@ _TRANS_ALLOWED: list[tuple[int, int]] = [
     (IR,    START),
     (START, E1),
     (E1,    E2),
+    (E1,    STOP),
     (E2,    E0),
     (E0,    E1),
-    (E0,    STOP),
     (STOP,  IR),
 ]
 

@@ -149,7 +149,8 @@ def main(argv: list[str] | None = None) -> int:
     from tiberius_orf.data.dataset import make_dataset
     from tiberius_orf.model.model import build_model_from_config
     from tiberius_orf.model.loss import (
-        MaskedCategoricalCrossentropy, MaskedAccuracy, all_class_f1_metrics,
+        MaskedCategoricalCrossentropy, MaskedCCEPlusBoundaryF1,
+        MaskedAccuracy, all_class_f1_metrics,
     )
 
     print(f"TF version: {tf.__version__}", flush=True)
@@ -175,9 +176,17 @@ def main(argv: list[str] | None = None) -> int:
     model.summary()
 
     optimizer = _build_optimizer(tc, mc["type"])
+    loss_type = tc.get("loss_type", "cce")
+    if loss_type == "cce_boundary_f1":
+        loss_fn = MaskedCCEPlusBoundaryF1(
+            class_weights=tc["class_weights"],
+            f1_lambda=tc.get("f1_lambda", 1.0),
+        )
+    else:
+        loss_fn = MaskedCategoricalCrossentropy(class_weights=tc["class_weights"])
     model.compile(
         optimizer=optimizer,
-        loss=MaskedCategoricalCrossentropy(class_weights=tc["class_weights"]),
+        loss=loss_fn,
         metrics=[MaskedAccuracy(name="accuracy")] + all_class_f1_metrics(),
     )
 

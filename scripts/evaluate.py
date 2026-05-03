@@ -6,9 +6,9 @@ CLI::
 
     python scripts/evaluate.py \\
       --test-manifest results/test/tfrecord_manifest.tsv \\
-      --weights       results/models/run_001/final.weights.h5 \\
-      --config        configs/default.yaml \\
-      --out           results/eval/test_metrics.tsv
+      --weights       results/models/cnn_lstm_run001/epoch_09.weights.h5 \\
+      --config        configs/cnn_lstm.yaml \\
+      --out           results/eval/cnn_lstm_run001_ep09.tsv
 """
 
 from __future__ import annotations
@@ -68,22 +68,13 @@ def main(argv: list[str] | None = None) -> int:
     with open(args.config) as fh:
         cfg = yaml.safe_load(fh)
     dc = cfg["data"]
-    mc = cfg["model"]
 
     import tensorflow as tf
     from tiberius_orf.data.dataset import make_dataset
-    from tiberius_orf.model.model import build_model
+    from tiberius_orf.model.model import build_model_from_config
     from tiberius_orf.hmm.viterbi import viterbi_decode_batch
 
-    model = build_model(
-        chunk_len=dc["chunk_len"],
-        lstm_units=mc["lstm_units"],
-        lstm_layers=mc["lstm_layers"],
-        dropout=mc["dropout"],
-        use_conv_stem=mc["use_conv_stem"],
-        conv_filters=mc["conv_filters"],
-        conv_kernel=mc["conv_kernel"],
-    )
+    model = build_model_from_config(cfg, chunk_len=dc["chunk_len"])
     model.load_weights(str(args.weights))
     print(f"Loaded weights from {args.weights}", flush=True)
 
@@ -95,7 +86,6 @@ def main(argv: list[str] | None = None) -> int:
         repeat=False,
     )
 
-    # Accumulators: model and IR-only baseline
     tp  = np.zeros(N_CLASSES, dtype=np.int64)
     fp  = np.zeros(N_CLASSES, dtype=np.int64)
     fn  = np.zeros(N_CLASSES, dtype=np.int64)
@@ -104,19 +94,16 @@ def main(argv: list[str] | None = None) -> int:
     bfn = np.zeros(N_CLASSES, dtype=np.int64)
 
     for x_batch, y_batch, pad_mask in test_ds:
-        x_np  = x_batch.numpy()       # [B, L, 6]
-        y_np  = y_batch.numpy()       # [B, L, 6]  one-hot
-        pm_np = pad_mask.numpy()      # [B, L]  True = PAD
+        y_np  = y_batch.numpy()
+        pm_np = pad_mask.numpy()
 
-        logits   = model(x_batch, training=False).numpy()  # [B, L, 6]
+        logits   = model(x_batch, training=False).numpy()
         log_prob = tf.nn.log_softmax(logits).numpy()
-        pred     = viterbi_decode_batch(log_prob)          # [B, L] int
+        pred     = viterbi_decode_batch(log_prob)   # [B, L] int
 
-        true_cls = np.argmax(y_np, axis=-1)  # [B, L] int
-        valid    = ~pm_np                    # [B, L] bool
-
-        # IR-only baseline: predict 0 everywhere
-        baseline = np.zeros_like(true_cls)
+        true_cls = np.argmax(y_np, axis=-1)         # [B, L] int
+        valid    = ~pm_np                           # [B, L] bool
+        baseline = np.zeros_like(true_cls)          # IR-only baseline
 
         for cls in range(N_CLASSES):
             pred_mask = (pred == cls) & valid
@@ -140,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
             for row in rows:
                 fh.write("\t".join(f"{v:.6f}" if isinstance(v, float) else str(v)
                                    for v in row) + "\n")
-        print(f"\nMetrics written to {args.out}")
+        print(f"\nMetrics written to {args.out}", flush=True)
 
     return 0
 

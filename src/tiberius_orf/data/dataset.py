@@ -86,7 +86,20 @@ def make_dataset(
         pad_mask = tf.cast(x[..., 5], tf.bool)  # True where PAD
         return x, y, pad_mask
 
-    ds = tf.data.TFRecordDataset(file_list, compression_type="")
+    # Interleave records from many files simultaneously so the shuffle buffer
+    # contains examples from many species at once, not a single sequential file.
+    cycle = min(32, len(file_list))
+    file_ds = tf.data.Dataset.from_tensor_slices(file_list)
+    if shuffle:
+        # Reshuffle file order every pass so each epoch sees a different species order.
+        file_ds = file_ds.shuffle(len(file_list), reshuffle_each_iteration=True)
+    ds = file_ds.interleave(
+        lambda p: tf.data.TFRecordDataset(p, compression_type=""),
+        cycle_length=cycle,
+        block_length=1,
+        num_parallel_calls=tf.data.AUTOTUNE,
+        deterministic=False,
+    )
     if shuffle:
         ds = ds.shuffle(shuffle_buffer)
     ds = ds.map(_parse, num_parallel_calls=tf.data.AUTOTUNE)

@@ -45,7 +45,6 @@ params.chunk_len        = (params.containsKey('chunk_len') && params.chunk_len !
 def die(msg) { log.error msg; System.exit(1) }
 
 if (!params.species_csv)   die("Missing --species_csv")
-if (!params.braker_data_dir) die("Missing --braker_data_dir")
 if (!(params.varus_dir || params.varus_runpl)) die("Missing --varus_dir or --varus_runpl")
 if (!params.varus_impl)    die("Missing --varus_impl")
 if (!params.hisat_dir)     die("Missing --hisat_dir")

@@ -157,3 +157,63 @@ class MaskedF1Score(tf.keras.metrics.Metric):
 def all_class_f1_metrics() -> list[MaskedF1Score]:
     """Return one MaskedF1Score metric per label class."""
     return [MaskedF1Score(i) for i in range(len(CLASS_NAMES))]
+
+
+# Indices of boundary classes that require precise localisation
+_BOUNDARY_CLASSES = [1, 5]  # START, STOP
+
+
+class MaskedCCEPlusBoundaryF1(tf.keras.losses.Loss):
+    """CCE with per-sample class weights + soft-F1 penalty for START and STOP.
+
+    loss = CCE(class_weights) + f1_lambda * mean(1 - soft_F1_c  for c in {START, STOP})
+
+    Soft F1 is computed from softmax probabilities (fully differentiable).
+    Batch-level TP/FP/FN are accumulated across all non-padded positions so
+    the gradient signal scales with how rare each boundary class is.
+
+    y_true format: [B, L, 7]  (same packed format as MaskedCategoricalCrossentropy)
+    """
+
+    def __init__(
+        self,
+        class_weights: list[float] | None = None,
+        f1_lambda: float = 1.0,
+        name: str = "cce_boundary_f1",
+    ):
+        super().__init__(name=name)
+        self.class_weights = class_weights or DEFAULT_CLASS_WEIGHTS
+        self.f1_lambda = f1_lambda
+
+    def _soft_boundary_f1_loss(
+        self,
+        labels: tf.Tensor,   # [B, L, 6] float32
+        probs: tf.Tensor,    # [B, L, 6] float32  (softmax output)
+        valid: tf.Tensor,    # [B, L]    float32  (1.0 = not padded)
+    ) -> tf.Tensor:
+        f1_losses = []
+        for c in _BOUNDARY_CLASSES:
+            p_c = probs[..., c] * valid   # soft predicted positives
+            y_c = labels[..., c] * valid  # true positives
+            tp = tf.reduce_sum(p_c * y_c)
+            fp = tf.reduce_sum(p_c * (1.0 - y_c))
+            fn = tf.reduce_sum((1.0 - p_c) * y_c)
+            soft_f1 = 2.0 * tp / (2.0 * tp + fp + fn + 1e-8)
+            f1_losses.append(1.0 - soft_f1)
+        return tf.add_n(f1_losses) / float(len(_BOUNDARY_CLASSES))
+
+    def call(self, y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        labels   = y_true[..., :6]
+        pad_mask = tf.cast(y_true[..., 6], tf.bool)
+        valid    = tf.cast(~pad_mask, tf.float32)
+
+        cce_term = masked_crossentropy(labels, y_pred, pad_mask, self.class_weights)
+        probs    = tf.nn.softmax(y_pred)
+        f1_term  = self._soft_boundary_f1_loss(labels, probs, valid)
+        return cce_term + self.f1_lambda * f1_term
+
+    def get_config(self):
+        cfg = super().get_config()
+        cfg["class_weights"] = self.class_weights
+        cfg["f1_lambda"]     = self.f1_lambda
+        return cfg

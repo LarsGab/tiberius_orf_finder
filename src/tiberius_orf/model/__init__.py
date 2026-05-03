@@ -4,6 +4,7 @@ from .cnn_transformer import build_cnn_transformer
 from .loss import (
     MaskedCategoricalCrossentropy, masked_crossentropy,
     MaskedAccuracy, MaskedF1Score, all_class_f1_metrics,
+    MaskedCCEPlusBoundaryF1,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "MaskedAccuracy",
     "MaskedF1Score",
     "all_class_f1_metrics",
+    "MaskedCCEPlusBoundaryF1",
 ]

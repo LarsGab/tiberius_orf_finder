@@ -23,7 +23,7 @@ from tiberius_orf.hmm.annotation_hmm import (  # noqa: E402
     DEFAULT_STOP_CODONS,
     E0, E1, E2, IR, N_STATES, START, STOP,
     OrfAnnotationHMM,
-    _codon_index,
+    _codon_probs_64,
     codon_emissions,
     eye_emission,
     state_start_dist,
@@ -31,23 +31,27 @@ from tiberius_orf.hmm.annotation_hmm import (  # noqa: E402
 )
 
 
-# ---------- codon index helper ----------
+# ---------- codon-probs builder ----------
 
-def test_codon_index_matches_bricks2marble():
-    """`_codon_index` must agree with bricks2marble's encoding for both
-    pivot directions (the pivot only affects time-axis alignment, not the
-    64-vector layout)."""
+def test_codon_probs_64_round_trips_through_bricks2marble():
+    """`_codon_probs_64` is just a numpy view onto bricks2marble's
+    `make_codon_probs`. We verify (a) shape (b) total mass and (c) that
+    a single-codon distribution puts a single 1.0 at SOME index, and
+    that index is consistent across the two pivot directions for codons
+    that are palindromic on the b2 base.
+    """
     from bricks2marble.tf.hmm.tools import make_codon_probs
 
     for codon in ("ATG", "TAA", "TAG", "TGA", "AAA", "TTT", "GCG"):
         for pivot_left in (True, False):
-            probs = make_codon_probs([(codon, 1.0)], pivot_left).numpy()
-            probs = probs.flatten()
-            idx = int(np.argmax(probs))
-            assert idx == _codon_index(codon), (
-                f"codon={codon} pivot_left={pivot_left}: bricks2marble idx={idx}, "
-                f"_codon_index={_codon_index(codon)}"
-            )
+            probs = _codon_probs_64([(codon, 1.0)], pivot_left)
+            assert probs.shape == (64,)
+            assert probs.sum() == pytest.approx(1.0)
+            # exactly one position should hold all the mass
+            assert (probs > 0).sum() == 1
+            # and it must agree with the underlying make_codon_probs
+            expected = make_codon_probs([(codon, 1.0)], pivot_left).numpy().flatten()
+            np.testing.assert_allclose(probs, expected, atol=0)
 
 
 # ---------- transition table ----------
@@ -71,13 +75,27 @@ def test_state_start_dist_uniform():
 
 # ---------- codon emission tables ----------
 
+def _idx_left(codon):
+    """Flat 64-index for a codon under bricks2marble's left-pivot encoding."""
+    from bricks2marble.tf.hmm.tools import make_codon_probs
+    probs = make_codon_probs([(codon, 1.0)], pivot_left=True).numpy().flatten()
+    return int(np.argmax(probs))
+
+
+def _idx_right(codon):
+    """Flat 64-index for a codon under bricks2marble's right-pivot encoding."""
+    from bricks2marble.tf.hmm.tools import make_codon_probs
+    probs = make_codon_probs([(codon, 1.0)], pivot_left=False).numpy().flatten()
+    return int(np.argmax(probs))
+
+
 def test_codon_emissions_start_codon_at_start():
     left, right = codon_emissions([("ATG", 1.0)], DEFAULT_STOP_CODONS)
     assert left.shape == (1, 6, 65)
     assert right.shape == (1, 6, 65)
 
-    # START's left-pivot row puts all mass on ATG
-    atg = _codon_index("ATG")
+    # START's left-pivot row puts all mass on ATG (under bricks2marble's encoding)
+    atg = _idx_left("ATG")
     assert left[0, START, atg] == pytest.approx(1.0)
     assert left[0, START, :64].sum() == pytest.approx(1.0)
     # All other codons forbidden at START
@@ -90,7 +108,7 @@ def test_codon_emissions_start_codon_at_start():
 
 def test_codon_emissions_stop_codon_at_stop():
     _, right = codon_emissions([("ATG", 1.0)], DEFAULT_STOP_CODONS)
-    stop_idxs = {_codon_index(c) for c, _ in DEFAULT_STOP_CODONS}
+    stop_idxs = {_idx_right(c) for c, _ in DEFAULT_STOP_CODONS}
     # Stop row has mass only on stop codons
     for k in range(64):
         if k in stop_idxs:
@@ -103,7 +121,7 @@ def test_codon_emissions_stop_codon_at_stop():
 
 def test_codon_emissions_in_frame_stop_check_at_e2():
     _, right = codon_emissions([("ATG", 1.0)], DEFAULT_STOP_CODONS)
-    stop_idxs = {_codon_index(c) for c, _ in DEFAULT_STOP_CODONS}
+    stop_idxs = {_idx_right(c) for c, _ in DEFAULT_STOP_CODONS}
     # E2 right-pivot row forbids stop codons (in-frame stop check)
     for k in stop_idxs:
         assert right[0, E2, k] == 0.0

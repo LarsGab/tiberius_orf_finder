@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import numpy as np
 import tensorflow as tf
-from bricks2marble.tf.hmm.tools import left_right_3mers
+from bricks2marble.tf.hmm.tools import left_right_3mers, make_codon_probs
 from hidten import HMMMode
 from hidten.tf import TFHMM, TFCategoricalEmitter
 
@@ -119,32 +119,27 @@ def state_start_dist() -> tuple[list[int], np.ndarray]:
 
 # ---------- codon emitter setup ----------
 
-_BASE_IDX = {"A": 0, "C": 1, "G": 2, "T": 3}
+def _codon_probs_64(
+    codons: list[tuple[str, float]] | tuple,
+    pivot_left: bool,
+) -> np.ndarray:
+    """Build the 64-vector for a codon distribution under bricks2marble's
+    encoding.
 
-
-def _codon_index(triplet: str) -> int:
-    """Index of a codon under bricks2marble's collapsed-3-mer encoding.
-
-    For both pivot directions ``make_kmer(..., collapse_pivot=True)`` packs
-    the three bases as ``b1 * 16 + b2 * 4 + b3`` (5'->3' order). The
-    "pivot" only changes how the k-mer is *aligned* to the time axis
-    (left- vs right-padded by ``left_right_3mers``), not the encoding
-    within the 64-vector.
+    Delegates to ``make_codon_probs`` so the layout matches what
+    ``left_right_3mers`` produces at runtime regardless of how the
+    underlying ``make_kmer`` packs the three bases. (The packing is
+    NON-trivial: left-pivot puts ``b2*16 + b3*4 + b1`` and right-pivot
+    puts ``b2*16 + b1*4 + b3`` — easy to get wrong by hand.)
     """
-    b1, b2, b3 = (_BASE_IDX[c.upper()] for c in triplet)
-    return b1 * 16 + b2 * 4 + b3
+    return make_codon_probs(list(codons), pivot_left).numpy().reshape(-1).astype(np.float32)
 
 
-def _codon_probs_64(codons: list[tuple[str, float]] | tuple) -> np.ndarray:
-    probs = np.zeros(64, dtype=np.float32)
-    for triplet, p in codons:
-        probs[_codon_index(triplet)] += float(p)
-    return probs
-
-
-def _not_stop_probs_64(stop_codons: list[tuple[str, float]] | tuple) -> np.ndarray:
-    """Uniform distribution over codons that are not stops."""
-    stop_probs = _codon_probs_64(stop_codons)
+def _not_stop_probs_64(
+    stop_codons: list[tuple[str, float]] | tuple,
+) -> np.ndarray:
+    """Right-pivot uniform distribution over codons that are not stops."""
+    stop_probs = _codon_probs_64(stop_codons, pivot_left=False)
     not_stop = (stop_probs == 0).astype(np.float32)
     not_stop /= not_stop.sum()
     return not_stop
@@ -168,9 +163,9 @@ def codon_emissions(
         E0     left=any,        right=any
         STOP   left=any,        right=stop_codon
     """
-    start_left = _codon_probs_64(start_codons)
+    start_left = _codon_probs_64(start_codons, pivot_left=True)
     not_stop_right = _not_stop_probs_64(stop_codons)
-    stop_right = _codon_probs_64(stop_codons)
+    stop_right = _codon_probs_64(stop_codons, pivot_left=False)
 
     unrestricted = np.zeros(65, dtype=np.float32)
     unrestricted[64] = 1.0

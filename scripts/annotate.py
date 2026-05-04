@@ -57,6 +57,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--parallel", type=int, default=100,
                     help="HMM parallel scan factor (default 100). Per-tx "
                          "sequences are right-padded to a multiple of this.")
+    ap.add_argument("--no-codon-emitter", action="store_true",
+                    help="Disable hard ATG/STOP/in-frame-stop codon "
+                         "constraints in the HMM (debugging variant).")
     ap.add_argument("--threads", type=int, default=4,
                     help="Threads for stringtie/gffread.")
     ap.add_argument("--tmp-dir", type=Path, default=None,
@@ -138,8 +141,15 @@ def main(argv: list[str] | None = None) -> int:
     model.load_weights(str(args.weights))
     print(f"Loaded {mc['type']} weights from {args.weights}", flush=True)
 
-    hmm = build_decoder_hmm(parallel=args.parallel)
-    print(f"Built OrfAnnotationHMM (parallel={args.parallel})", flush=True)
+    hmm = build_decoder_hmm(
+        parallel=args.parallel,
+        use_codon_emitter=not args.no_codon_emitter,
+    )
+    print(
+        f"Built OrfAnnotationHMM (parallel={args.parallel}, "
+        f"codon_emitter={not args.no_codon_emitter})",
+        flush=True,
+    )
 
     # 4. load sequences + exon structure
     sequences   = read_fasta(transcripts_fa)

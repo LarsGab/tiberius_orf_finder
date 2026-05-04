@@ -297,6 +297,7 @@ class OrfAnnotationHMM(tf.keras.Layer):
         train_transitions: bool = False,
         train_start_dist: bool = False,
         uniform_N: bool = False,
+        use_codon_emitter: bool = True,
     ) -> None:
         super().__init__()
         self.mode = mode
@@ -318,6 +319,7 @@ class OrfAnnotationHMM(tf.keras.Layer):
         self._train_transitions = train_transitions
         self._train_start_dist = train_start_dist
         self.uniform_N = uniform_N
+        self.use_codon_emitter = use_codon_emitter
 
         self.hmm = TFHMM(states=N_STATES, heads=1)
 
@@ -338,18 +340,22 @@ class OrfAnnotationHMM(tf.keras.Layer):
         self.stream_emitter.trainable = train_emitter
         self.hmm.add_emitter(self.stream_emitter)
 
-        left_probs, right_probs = codon_emissions(
-            self.start_codons, self.stop_codons,
-        )
-        self.nuc_emitter_left = TFCategoricalEmitter()
-        self.nuc_emitter_left.initializer = left_probs.flatten()
-        self.nuc_emitter_left.trainable = False
-        self.hmm.add_emitter(self.nuc_emitter_left)
+        if use_codon_emitter:
+            left_probs, right_probs = codon_emissions(
+                self.start_codons, self.stop_codons,
+            )
+            self.nuc_emitter_left = TFCategoricalEmitter()
+            self.nuc_emitter_left.initializer = left_probs.flatten()
+            self.nuc_emitter_left.trainable = False
+            self.hmm.add_emitter(self.nuc_emitter_left)
 
-        self.nuc_emitter_right = TFCategoricalEmitter()
-        self.nuc_emitter_right.initializer = right_probs.flatten()
-        self.nuc_emitter_right.trainable = False
-        self.hmm.add_emitter(self.nuc_emitter_right)
+            self.nuc_emitter_right = TFCategoricalEmitter()
+            self.nuc_emitter_right.initializer = right_probs.flatten()
+            self.nuc_emitter_right.trainable = False
+            self.hmm.add_emitter(self.nuc_emitter_right)
+        else:
+            self.nuc_emitter_left = None
+            self.nuc_emitter_right = None
 
         if codon_hint_emitter is not None:
             self.codon_hint_emitter_layer = TFCategoricalEmitter()
@@ -373,8 +379,10 @@ class OrfAnnotationHMM(tf.keras.Layer):
         else:
             x_shape = tuple(input_shape)
         stream_shape = x_shape
-        codon_shape = stream_shape[:-1] + (65,)
-        build_shapes = [stream_shape, codon_shape, codon_shape]
+        build_shapes: list = [stream_shape]
+        if self.use_codon_emitter:
+            codon_shape = stream_shape[:-1] + (65,)
+            build_shapes.extend([codon_shape, codon_shape])
         if self.codon_hint_emitter_layer is not None:
             build_shapes.append(stream_shape[:-1] + (7,))
         self.hmm.build(tuple(build_shapes))
@@ -393,10 +401,12 @@ class OrfAnnotationHMM(tf.keras.Layer):
 
     def call(self, x: tf.Tensor, nuc: tf.Tensor) -> tf.Tensor:
         nuc_raw, codon_hint = self._split_nuc(nuc)
-        nuc_left, nuc_right = left_right_3mers(
-            nuc_raw, uniform_N=self.uniform_N,
-        )
-        emissions: tuple[tf.Tensor, ...] = (x, nuc_left, nuc_right)
+        emissions: tuple[tf.Tensor, ...] = (x,)
+        if self.use_codon_emitter:
+            nuc_left, nuc_right = left_right_3mers(
+                nuc_raw, uniform_N=self.uniform_N,
+            )
+            emissions = emissions + (nuc_left, nuc_right)
         if codon_hint is not None:
             emissions = emissions + (codon_hint,)
         return self.hmm(*emissions, mode=self.mode, parallel=self.parallel)

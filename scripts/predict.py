@@ -22,6 +22,7 @@ import argparse
 import sys
 from collections import defaultdict
 from pathlib import Path
+from tiberius_orf.hmm.viterbi import viterbi_decode
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
@@ -116,10 +117,17 @@ def _predict_per_tx(
         ordered_logits = np.concatenate(
             [logits_buf[tid][ci] for ci, _ in chunks_by_tx[tid]], axis=0
         )
+
+        m = ordered_logits.max(axis=-1, keepdims=True)
+        # log_probs = ordered_logits - m - np.log(
+        #     np.exp(ordered_logits - m).sum(axis=-1, keepdims=True)
+        # )
+
         valid = ordered_x[..., 5] != 1
         true_len = int(valid.sum())
         nuc = ordered_x[:true_len, :5].astype(np.float32)
         logits = ordered_logits[:true_len].astype(np.float32)
+        # out[tid] = viterbi_decode(log_probs)[:true_len].astype(np.int32)
         out[tid] = viterbi_decode_one(hmm, logits, nuc)
 
     return out

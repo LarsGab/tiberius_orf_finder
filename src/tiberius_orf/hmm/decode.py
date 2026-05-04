@@ -37,14 +37,22 @@ def build_decoder_hmm(
     initial_ir_len: float = 300.0,
     initial_exon_len: float = 600.0,
     emitter_epsilon: float = 0.01,
+    use_codon_emitter: bool = True,
 ) -> OrfAnnotationHMM:
-    """Build a Viterbi-mode :class:`OrfAnnotationHMM` ready for decoding."""
+    """Build a Viterbi-mode :class:`OrfAnnotationHMM` ready for decoding.
+
+    Set ``use_codon_emitter=False`` to drop the hard ATG-at-START /
+    not-stop-at-E2 / stop-at-STOP nucleotide constraints — useful as a
+    debugging variant equivalent to "soft transitions + stream emitter
+    only" (closest analogue of the pure-numpy ``viterbi_decode``).
+    """
     return OrfAnnotationHMM(
         mode=HMMMode.VITERBI,
         parallel=parallel,
         initial_ir_len=initial_ir_len,
         initial_exon_len=initial_exon_len,
         emitter_epsilon=emitter_epsilon,
+        use_codon_emitter=use_codon_emitter,
     )
 
 

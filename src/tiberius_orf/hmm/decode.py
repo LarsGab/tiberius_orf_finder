@@ -88,6 +88,23 @@ def _normalise_pad_mask(
     return nuc
 
 
+def _compiled_call(hmm: OrfAnnotationHMM):
+    """Cache a ``tf.function``-wrapped HMM call on the layer instance.
+
+    Calling a Keras layer directly runs in eager mode, which makes the
+    underlying ``tf.scan`` over the time axis slow (one Python op per
+    step). Graph-compiling the call gets a 10-50x speedup. We use
+    ``reduce_retracing=True`` so per-transcript shape changes trigger
+    only a handful of traces instead of one per length.
+    """
+    if not hasattr(hmm, "_tf_decode_fn"):
+        @tf.function(reduce_retracing=True)
+        def _fn(probs, nuc):
+            return hmm(probs, nuc)
+        hmm._tf_decode_fn = _fn
+    return hmm._tf_decode_fn
+
+
 def viterbi_decode_batch(
     hmm: OrfAnnotationHMM,
     logits: np.ndarray,
@@ -115,7 +132,7 @@ def viterbi_decode_batch(
 
     probs = tf.nn.softmax(tf.constant(logits, dtype=tf.float32))
     nuc_t = tf.constant(nuc, dtype=tf.float32)
-    out = hmm(probs, nuc_t).numpy()
+    out = _compiled_call(hmm)(probs, nuc_t).numpy()
     out = out[..., 0].astype(np.int32)
     return out[:, :L_in]
 

@@ -107,18 +107,19 @@ def labels_to_gtf_lines(
     """Return one GTF line per genomic CDS segment for all complete ORFs in the
     transcript.
 
-    Frame is computed as `(cds_offset_from_orf_start) % 3`, where cds_offset
-    is the number of coding bases preceding this segment within the same ORF.
-    Per GTF spec frame is the number of bases until the next codon starts:
-    0 means this segment begins on a codon boundary.
+    Per GTF/GFF3 spec, the phase (column 8) is the number of bases that must
+    be removed from the start of this CDS feature to reach the first base of
+    the next codon: 0 means this segment begins on a codon boundary, 1 means
+    skip 1 base, 2 means skip 2 bases. With `cds_offset` = number of coding
+    bases preceding this segment within the same ORF, this is
+    `(3 - cds_offset % 3) % 3`, NOT `cds_offset % 3` (which swaps 1 and 2).
     """
     out: list[str] = []
     for orf_tx_start, orf_tx_end in extract_orfs(labels):
-        # Walk segments in genomic ASC order; remember tx-coord ordering for frame.
-        # For frame computation we need the TX-coord position of each segment's
-        # first base, then frame = ( (tx_pos - orf_tx_start) % 3 ).
-        # We re-derive tx-coord offsets per segment by walking the tx_interval
-        # function's internal logic below.
+        # Walk segments in genomic ASC order; remember tx-coord ordering for phase.
+        # For phase computation we need the TX-coord position of each segment's
+        # first base, then phase = (3 - (tx_pos - orf_tx_start) % 3) % 3
+        # (GTF phase = bases to skip to reach the next codon start).
         exons_in_tx_order = (
             list(tx.exons) if tx.strand == "+" else list(reversed(tx.exons))
         )
@@ -142,7 +143,7 @@ def labels_to_gtf_lines(
 
         per_segment.sort()  # genomic ASC
         for g_lo, g_hi, tx_pos in per_segment:
-            frame = (tx_pos - orf_tx_start) % 3
+            phase = (3 - (tx_pos - orf_tx_start) % 3) % 3
             # GTF: 1-based inclusive
             out.append(
                 "\t".join([
@@ -153,7 +154,7 @@ def labels_to_gtf_lines(
                     str(g_hi),
                     ".",
                     tx.strand,
-                    str(frame),
+                    str(phase),
                     _gtf_attr(tx_id),
                 ])
             )

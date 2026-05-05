@@ -62,6 +62,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                          "constraints in the HMM (debugging variant).")
     ap.add_argument("--threads", type=int, default=4,
                     help="Threads for stringtie/gffread.")
+    ap.add_argument("--longread", action="store_true",
+                    help="Pass -L to StringTie (long-read assembly mode). "
+                         "Use when --bam contains PacBio Iso-Seq or ONT "
+                         "spliced alignments.")
     ap.add_argument("--tmp-dir", type=Path, default=None,
                     help="Workdir for intermediate files. Defaults to a tempdir.")
     ap.add_argument("--keep-tmp", action="store_true",
@@ -116,10 +120,14 @@ def main(argv: list[str] | None = None) -> int:
     # 1. resolve StringTie GTF
     if args.bam is not None:
         stringtie_gtf = tmp_root / "stringtie.gtf"
-        print(f"Running StringTie on {args.bam}", flush=True)
-        _run_cmd(["stringtie", str(args.bam),
+        print(f"Running StringTie on {args.bam} "
+              f"(longread={args.longread})", flush=True)
+        st_cmd = ["stringtie", str(args.bam),
                   "-o", str(stringtie_gtf),
-                  "-p", str(args.threads)])
+                  "-p", str(args.threads)]
+        if args.longread:
+            st_cmd.append("-L")
+        _run_cmd(st_cmd)
     else:
         stringtie_gtf = args.stringtie_gtf
 

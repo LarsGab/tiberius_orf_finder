@@ -1,0 +1,4 @@
+species,sra_run,genome_accession,instrument,library_selection,read_count,base_count_gb,study
+Drosophila melanogaster,SRR31444194,GCF_000001215.4,Sequel IIe,cDNA,708874,0.84,PRJNA1189499
+Bombyx mori,DRR453260,GCF_030269925.1,Sequel II,PolyA,2216510,3.03,PRJDB15448
+Apis mellifera,SRR23752030,GCF_003254395.2,Sequel II,Oligo-dT FL-cDNA,40663357,62.50,PRJNA941379

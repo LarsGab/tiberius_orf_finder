@@ -3,6 +3,7 @@
 # Usage:  sbatch nextflow/submit_chlorophyta.sh {training|validation|test}
 #
 #SBATCH --job-name=tib_chl_dataprep
+#SBATCH --partition=snowball,pinky,batch
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --time=72:00:00

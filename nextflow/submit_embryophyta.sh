@@ -7,6 +7,7 @@
 # populate /home/gabriell/tiberius_mesangiospermae_training_data/by_species/.
 #
 #SBATCH --job-name=tib_emb_dataprep
+#SBATCH --partition=snowball,pinky,batch
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --time=168:00:00

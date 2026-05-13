@@ -6,6 +6,7 @@
 # /home/gabriell/tiberius_diatoms_staged/by_species/<Genus_species>/{genome.fa,annotation.gff}
 #
 #SBATCH --job-name=tib_dia_dataprep
+#SBATCH --partition=snowball,pinky,batch
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --time=72:00:00

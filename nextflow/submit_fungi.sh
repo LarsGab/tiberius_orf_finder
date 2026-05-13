@@ -6,6 +6,7 @@
 # on `brain` appropriately if you fan out further than the default queueSize=50.
 #
 #SBATCH --job-name=tib_fun_dataprep
+#SBATCH --partition=snowball,pinky,batch
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --time=120:00:00

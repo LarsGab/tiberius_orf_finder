@@ -1,10 +1,23 @@
 // Fetch or stage the genome and reference annotation for one species.
 //
-// RefSeq species are downloaded via the NCBI `datasets` CLI.
-// BRAKER species are staged from a shared filesystem under
-// ${params.braker_data_dir}/<Genus_species>/ where the expected files are:
-//   <Genus_species>_renamed.fna
-//   <Genus_species>_cds_longest.gtf
+// Three source families are supported:
+//   * RefSeq    -> download via `datasets download genome accession <GCA|GCF>`
+//                  Used for any row whose annotation label denotes a
+//                  publicly-fetchable NCBI assembly. Annotation labels that
+//                  map to this branch: RefSeq, Genbank, ensembl, ENSEMBL,
+//                  DDBJ, EMBL, NCBI.
+//   * BRAKER    -> stage from ${params.braker_data_dir}/<Genus_species>/
+//                  Expected files:
+//                    <Genus_species>_renamed.fna
+//                    <Genus_species>_cds_longest.gtf
+//   * Phytozome -> stage from ${params.phytozome_data_dir}/<Genus_species>/
+//                  Expected files:
+//                    genome.fa
+//                    annotation.gff
+//                  Used for the Embryophyta (Mesangiospermae) Figshare bundle
+//                  (doi:10.6084/m9.figshare.32086728), pre-staged into a
+//                  per-species symlink layout by
+//                  scripts/stage_mesangiospermae_figshare.py.
 
 process FETCH_ASSEMBLY {
     tag { species }
@@ -24,7 +37,8 @@ process FETCH_ASSEMBLY {
 
     script:
     def underscored = species.replaceAll(' ', '_')
-    if (annotation == 'RefSeq')
+    def ncbiLabels  = ['RefSeq', 'Genbank', 'GenBank', 'ensembl', 'ENSEMBL', 'DDBJ', 'EMBL', 'NCBI']
+    if (ncbiLabels.contains(annotation))
     """
     set -euo pipefail
     datasets download genome accession ${accession} \\
@@ -41,6 +55,15 @@ process FETCH_ASSEMBLY {
     test -d "\$src" || { echo "missing BRAKER dir: \$src" >&2; exit 2; }
     cp "\$src/${underscored}_renamed.fna" genome.fa
     cp "\$src/${underscored}_cds_longest.gtf" annotation.gff
+    """
+    else if (annotation == 'Phytozome')
+    """
+    set -euo pipefail
+    src="${params.phytozome_data_dir}/${underscored}"
+    test -d "\$src" || { echo "missing Phytozome dir: \$src" >&2; exit 2; }
+    # symlinks (created by stage_mesangiospermae_figshare.py) are followed
+    cp -L "\$src/genome.fa"      genome.fa
+    cp -L "\$src/annotation.gff" annotation.gff
     """
     else
     """

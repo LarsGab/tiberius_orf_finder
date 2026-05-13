@@ -19,7 +19,7 @@ export NXF_CACHE_DIR=/home/gabriell/tiberius_orf_finder/.nextflow_test_lr
 /home/gabriell/programs/nextflow run nextflow/main_longread.nf \
     -c nextflow/conf/brain_longread.config \
     -work-dir /home/gabriell/tiberius_orf_finder/work/test_lr \
-    --species_csv nextflow/conf/species_test.csv \
+    --species_csv nextflow/conf/species_test_longread.csv \
     --reuse_assembly_dir /home/gabriell/tiberius_orf_finder/results/test \
     --outdir /home/gabriell/tiberius_orf_finder/results/test_longread \
     -resume

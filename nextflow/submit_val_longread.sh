@@ -19,7 +19,7 @@ export NXF_CACHE_DIR=/home/gabriell/tiberius_orf_finder/.nextflow_val_lr
 /home/gabriell/programs/nextflow run nextflow/main_longread.nf \
     -c nextflow/conf/brain_longread.config \
     -work-dir /home/gabriell/tiberius_orf_finder/work/val_lr \
-    --species_csv nextflow/conf/species_val.csv \
+    --species_csv nextflow/conf/species_val_longread.csv \
     --reuse_assembly_dir /home/gabriell/tiberius_orf_finder/results/val \
     --outdir /home/gabriell/tiberius_orf_finder/results/val_longread \
     -resume

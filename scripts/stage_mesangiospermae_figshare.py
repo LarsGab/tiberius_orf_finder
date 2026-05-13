@@ -47,15 +47,13 @@ def _resolve_sources(root: Path, split: str, file_stem: str) -> tuple[Path, Path
 
 
 def _symlink(src: Path, dst: Path, dry_run: bool) -> None:
+    if dry_run:
+        marker = "exists" if dst.is_symlink() or dst.exists() else "link "
+        print(f"  [{marker}] {dst} -> {src}")
+        return
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.is_symlink() or dst.exists():
-        if dry_run:
-            print(f"  [exists] {dst}")
-            return
         dst.unlink()
-    if dry_run:
-        print(f"  [link ] {dst} -> {src}")
-        return
     os.symlink(src, dst)
 
 

@@ -53,8 +53,22 @@ process FETCH_ASSEMBLY {
     set -euo pipefail
     src="${params.braker_data_dir}/${underscored}"
     test -d "\$src" || { echo "missing BRAKER dir: \$src" >&2; exit 2; }
-    cp "\$src/${underscored}_renamed.fna" genome.fa
-    cp "\$src/${underscored}_cds_longest.gtf" annotation.gff
+    # Two BRAKER layouts are supported:
+    #   1. Pre-staged (diatoms / mesangiospermae-style):
+    #         <src>/genome.fa  +  <src>/annotation.gff
+    #   2. Legacy insects layout:
+    #         <src>/<Genus_species>_renamed.fna
+    #         <src>/<Genus_species>_cds_longest.gtf
+    if [[ -s "\$src/genome.fa" && -s "\$src/annotation.gff" ]]; then
+        cp -L "\$src/genome.fa"      genome.fa
+        cp -L "\$src/annotation.gff" annotation.gff
+    elif [[ -s "\$src/${underscored}_renamed.fna" && -s "\$src/${underscored}_cds_longest.gtf" ]]; then
+        cp "\$src/${underscored}_renamed.fna"      genome.fa
+        cp "\$src/${underscored}_cds_longest.gtf"  annotation.gff
+    else
+        echo "BRAKER source dir \$src has neither {genome.fa,annotation.gff} nor legacy ${underscored}_renamed.fna/_cds_longest.gtf" >&2
+        exit 2
+    fi
     """
     else if (annotation == 'Phytozome')
     """

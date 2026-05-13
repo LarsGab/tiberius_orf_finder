@@ -197,22 +197,23 @@ def parse_chlorophyta(tex_path: Path):
 
 
 def parse_diatoms(tex_path: Path):
-    def is_manual(row):
-        # *Thalassiosira pseudonana* uses a non-NCBI accession token like
-        # "Filloramo et al., 2021" – flag for manual staging.
-        return not ACCESSION_RE.search(row["accession_raw"])
-
+    # All diatoms species (train/val/test, including *T. pseudonana* and
+    # *P. tricornutum*) are pre-staged on brain under
+    # /home/nas-hs/projs/Tiberius_diatoms/tiberius_dataprep/data/{annotations,genomes}/
+    # so every row uses the BRAKER staging branch in fetch.nf. The
+    # source-column distinction in the tex table (BRAKER vs EMBL vs DDBJ vs
+    # Genbank vs AUGUSTUS/Geneious) is preserved in scripts/data/diatoms_file_map.tsv
+    # but doesn't affect the pipeline.
     return _parse_pair_table(
         tex_path,
         annotation_label_map={
             "BRAKER":            "BRAKER",
-            "EMBL":              "RefSeq",
-            "DDBJ":              "RefSeq",
-            "Genbank":           "RefSeq",
-            "AUGUSTUS/Geneious": "RefSeq",
-            "ENSEMBL":           "RefSeq",
+            "EMBL":              "BRAKER",
+            "DDBJ":              "BRAKER",
+            "Genbank":           "BRAKER",
+            "AUGUSTUS/Geneious": "BRAKER",
+            "ENSEMBL":           "BRAKER",
         },
-        manual_predicate=is_manual,
     )
 
 

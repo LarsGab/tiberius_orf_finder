@@ -20,14 +20,16 @@ case "$SPLIT" in
     *) echo "usage: $0 training|validation|test" >&2; exit 2 ;;
 esac
 
-mkdir -p /home/gabriell/tiberius_orf_finder/logs
-cd /home/gabriell/tiberius_orf_finder
+PROJDIR=/home/gabriell/tiberius_orf_finder
+RUNDIR=${PROJDIR}/runs/fungi_${SPLIT}
+mkdir -p "${PROJDIR}/logs" "${RUNDIR}"
+cd "${RUNDIR}"   # isolated work/ + .nextflow/ per (clade,split) – avoids LOCK contention
 
 export PATH="/home/gabriell/programs:$PATH"
 export NXF_HOME=/home/gabriell/.nextflow
 
-/home/gabriell/programs/nextflow run nextflow/main_shortread_v2.nf \
-    -c nextflow/conf/brain_shortread_v2.config \
-    --species_csv nextflow/conf/fungi/species_${SPLIT}.csv \
-    --outdir /home/gabriell/tiberius_orf_finder/results/fungi_${SPLIT} \
+/home/gabriell/programs/nextflow run ${PROJDIR}/nextflow/main_shortread_v2.nf \
+    -c ${PROJDIR}/nextflow/conf/brain_shortread_v2.config \
+    --species_csv ${PROJDIR}/nextflow/conf/fungi/species_${SPLIT}.csv \
+    --outdir ${PROJDIR}/results/fungi_${SPLIT} \
     -resume

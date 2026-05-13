@@ -15,8 +15,11 @@
 #SBATCH --error=/home/gabriell/tiberius_orf_finder/logs/tib_embryophyta_%j.err
 
 set -euo pipefail
-SPLIT="${1:?usage: $0 {training|validation|test}}"
-case "$SPLIT" in training|validation|test) ;; *) echo "bad split: $SPLIT" >&2; exit 2;; esac
+SPLIT="${1:-}"
+case "$SPLIT" in
+    training|validation|test) ;;
+    *) echo "usage: $0 training|validation|test" >&2; exit 2 ;;
+esac
 
 mkdir -p /home/gabriell/tiberius_orf_finder/logs
 cd /home/gabriell/tiberius_orf_finder

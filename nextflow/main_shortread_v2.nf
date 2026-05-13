@@ -81,7 +81,7 @@ if (!params.species_csv) die("Missing --species_csv")
 workflow {
 
     ch_species = Channel.fromPath(params.species_csv, checkIfExists: true)
-        .splitCsv(header: true)
+        .splitCsv(header: true, quote: '"')
         .map { row -> tuple(row.species, row.accession, row.annotation) }
 
     assembly       = FETCH_ASSEMBLY(ch_species).assembly

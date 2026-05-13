@@ -48,6 +48,18 @@ def _strip_latex(s: str) -> str:
     return s.strip()
 
 
+def _sanitise_accession(acc: str) -> str:
+    """Strip characters that confuse downstream CSV / shell parsing.
+    The accession column is informational for non-NCBI rows (BRAKER /
+    Phytozome staging branches key off the species name, not the accession),
+    so squashing commas and quotes is safe."""
+    s = acc.strip()
+    s = s.replace('"', "")
+    s = s.replace(",", " ")
+    s = re.sub(r"\s+", "_", s).strip("_")
+    return s
+
+
 def _normalise_species(name: str) -> str:
     """`Cylcotella atomus` -> `Cylcotella atomus` (whitespace + sp. stripped)."""
     name = _strip_latex(name)
@@ -173,7 +185,7 @@ def _parse_pair_table(
                 accession = acc_match.group(0)
             else:
                 # BRAKER / Phytozome staged – accession column is informational.
-                accession = acc_match.group(0) if acc_match else acc
+                accession = acc_match.group(0) if acc_match else _sanitise_accession(acc)
 
             out[split].append({
                 "species": sp,
@@ -308,7 +320,7 @@ def parse_embryophyta(tex_path: Path):
         # Keep the original accession token (Phytozome ID, GCA_/GCF_, or
         # "Figshare" placeholder) for documentation only.
         acc_match = ACCESSION_RE.search(acc_raw)
-        accession = acc_match.group(0) if acc_match else (
+        accession = acc_match.group(0) if acc_match else _sanitise_accession(
             acc_raw if acc_raw and acc_raw != "-" else "Figshare"
         )
         out[split].append({

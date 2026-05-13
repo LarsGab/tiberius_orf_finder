@@ -29,4 +29,5 @@ export NXF_HOME=/home/gabriell/.nextflow
     -c ${PROJDIR}/nextflow/conf/brain_shortread_v2.config \
     --species_csv ${PROJDIR}/nextflow/conf/chlorophyta/species_${SPLIT}.csv \
     --outdir ${PROJDIR}/results/chlorophyta_${SPLIT} \
+    --varus_min_uniq_pct 0.1 \
     -resume

@@ -4,7 +4,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
-#SBATCH --time=120:00:00
+#SBATCH --time=72:00:00
 #SBATCH --output=/home/gabriell/tiberius_orf_finder/logs/train_run006_embryophyta_%j.out
 #SBATCH --error=/home/gabriell/tiberius_orf_finder/logs/train_run006_embryophyta_%j.err
 

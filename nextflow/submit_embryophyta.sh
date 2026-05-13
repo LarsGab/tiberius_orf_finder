@@ -10,7 +10,7 @@
 #SBATCH --partition=snowball,pinky,batch
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
-#SBATCH --time=168:00:00
+#SBATCH --time=72:00:00
 #SBATCH --output=/home/gabriell/tiberius_orf_finder/logs/tib_embryophyta_%j.out
 #SBATCH --error=/home/gabriell/tiberius_orf_finder/logs/tib_embryophyta_%j.err
 

@@ -8,9 +8,15 @@
 # Usage:
 #   scripts/run_species_local.sh <Genus_species> <species_dir> [threads]
 #
-# Expected layout under <species_dir> before running:
+# If the assembly is not already present at:
 #   <species_dir>/assembly/genome.fa
 #   <species_dir>/assembly/annotation.gff
+# the script will fetch it from one of:
+#   - rsync from ${REMOTE_HOST}:${REMOTE_PHYTOZOME_DIR}/<Genus_species>/
+#     (defaults are brain + the Mesangiospermae Figshare staging dir,
+#      so this Just Works for Embryophyta if you can SSH to brain), OR
+#   - NCBI `datasets download genome accession ${NCBI_ACCESSION}`
+#     (set NCBI_ACCESSION=GCA_... or GCF_... to override the rsync path).
 #
 # Optional cached state (any subset, rsync from brain to skip a stage):
 #   <species_dir>/varus/Runlist.tsv
@@ -53,16 +59,42 @@ MIN_UNIQ_PCT="${MIN_UNIQ_PCT:-5.0}"
 
 export PYTHONPATH="${PROJDIR}/src:${PYTHONPATH:-}"
 
+# Remote rsync source for the Mesangiospermae Figshare-staged genomes
+# (override REMOTE_HOST / REMOTE_PHYTOZOME_DIR if you have it elsewhere).
+REMOTE_HOST="${REMOTE_HOST:-brain}"
+REMOTE_PHYTOZOME_DIR="${REMOTE_PHYTOZOME_DIR:-/home/gabriell/tiberius_mesangiospermae_training_data/by_species}"
+NCBI_ACCESSION="${NCBI_ACCESSION:-}"   # optional override; if set, use NCBI datasets instead of rsync
+
 GENOME="${SPDIR}/assembly/genome.fa"
 ANNOT="${SPDIR}/assembly/annotation.gff"
 
-[[ -s "${GENOME}" ]] || { echo "missing ${GENOME}" >&2; exit 2; }
-[[ -s "${ANNOT}"  ]] || { echo "missing ${ANNOT}"  >&2; exit 2; }
-
-mkdir -p "${SPDIR}/varus" "${SPDIR}/stringtie" "${SPDIR}/labels" "${SPDIR}/tfrecord"
+mkdir -p "${SPDIR}/assembly" "${SPDIR}/varus" "${SPDIR}/stringtie" "${SPDIR}/labels" "${SPDIR}/tfrecord"
 
 cd "${SPDIR}"
 echo "[${SPECIES_UNDER}] working in ${SPDIR}"
+
+# ------- 0) FETCH_ASSEMBLY -------
+if [[ -s "${GENOME}" && -s "${ANNOT}" ]]; then
+    echo "[${SPECIES_UNDER}] assembly: cached"
+elif [[ -n "${NCBI_ACCESSION}" ]]; then
+    echo "[${SPECIES_UNDER}] assembly: NCBI datasets download (${NCBI_ACCESSION})"
+    pushd assembly > /dev/null
+    rm -rf ncbi ncbi.zip
+    datasets download genome accession "${NCBI_ACCESSION}" --include genome,gff3 --filename ncbi.zip
+    unzip -o -q ncbi.zip -d ncbi
+    cat "ncbi/ncbi_dataset/data/${NCBI_ACCESSION}/"*_genomic.fna > genome.fa
+    cp "ncbi/ncbi_dataset/data/${NCBI_ACCESSION}/genomic.gff" annotation.gff
+    rm -rf ncbi ncbi.zip
+    popd > /dev/null
+else
+    echo "[${SPECIES_UNDER}] assembly: rsync from ${REMOTE_HOST}:${REMOTE_PHYTOZOME_DIR}/${SPECIES_UNDER}/"
+    rsync -avL --progress \
+        "${REMOTE_HOST}:${REMOTE_PHYTOZOME_DIR}/${SPECIES_UNDER}/genome.fa" \
+        "${REMOTE_HOST}:${REMOTE_PHYTOZOME_DIR}/${SPECIES_UNDER}/annotation.gff" \
+        assembly/
+fi
+[[ -s "${GENOME}" ]] || { echo "FETCH failed: missing ${GENOME}" >&2; exit 2; }
+[[ -s "${ANNOT}"  ]] || { echo "FETCH failed: missing ${ANNOT}"  >&2; exit 2; }
 
 # ------- 1) VARUS_RUNLIST_SR -------
 if [[ -s varus/Runlist.tsv ]]; then

@@ -60,8 +60,18 @@ def _sanitise_accession(acc: str) -> str:
     return s
 
 
+# Known tex-table typos. Entrez doesn't recognise the typo'd binomial, so
+# VARUS_RUNLIST_SR returns no SRA runs; and the staged dirs on brain use
+# the corrected spellings. Map typo -> correct binomial at parse time.
+SPECIES_TYPO_FIXES = {
+    "Cylcotella atomus":           "Cyclotella atomus",
+    "Pseudo-nitschia multistriata": "Pseudo-nitzschia multistriata",
+}
+
+
 def _normalise_species(name: str) -> str:
-    """`Cylcotella atomus` -> `Cylcotella atomus` (whitespace + sp. stripped)."""
+    """`Cylcotella atomus` -> `Cyclotella atomus` (typo fixed, whitespace
+    collapsed, strain suffix dropped)."""
     name = _strip_latex(name)
     name = re.sub(r"\s+", " ", name).strip()
     # Drop subspecies / strain suffixes the .tex sometimes carries past the
@@ -69,8 +79,10 @@ def _normalise_species(name: str) -> str:
     # two whitespace-separated tokens.
     parts = name.split()
     if len(parts) >= 2:
-        return f"{parts[0]} {parts[1]}"
-    return name
+        binomial = f"{parts[0]} {parts[1]}"
+    else:
+        binomial = name
+    return SPECIES_TYPO_FIXES.get(binomial, binomial)
 
 
 def _iter_table_body(tex: str) -> Iterable[str]:

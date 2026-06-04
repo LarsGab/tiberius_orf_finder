@@ -79,8 +79,9 @@ process VARUS_INDEX_SR {
         --outdir genome_index \\
         --threads ${task.cpus} \\
         --prefix hisatidx
-    # HISAT2 index is a set of .ht2 files (typically 8). Sanity-check.
-    ls genome_index/hisatidx.*.ht2 > /dev/null
+    # HISAT2 index is a set of .ht2 (or .ht2l for genomes >4 Gb) files,
+    # typically 8 of them. Sanity-check that at least one .1.* exists.
+    test -s genome_index/hisatidx.1.ht2 || test -s genome_index/hisatidx.1.ht2l
     """
 
     stub:

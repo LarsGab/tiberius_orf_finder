@@ -33,7 +33,12 @@
 #
 # Tools that must be on $PATH (provide via micromamba `orffinder` env or your
 # choice of conda/system install): hisat2, samtools, stringtie, gffread,
-# fastq-dump, python (with varus, biopython, numpy, pyyaml, tensorflow).
+# fastq-dump, python (with varus + pysam, biopython, numpy, pyyaml, tensorflow).
+#
+# IMPORTANT: VARUS v2 needs `pysam` for batch QC. Install with either
+#   pip install pysam
+# or (cleaner)
+#   pip install -e /path/to/VARUS".[align]"
 #
 # Tiberius repo Python modules used:
 #   tiberius_orf.data.label_transcripts

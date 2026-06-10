@@ -73,12 +73,12 @@ params.chunk_len            = (params.containsKey('chunk_len') && params.chunk_l
 
 def die(msg) { log.error msg; System.exit(1) }
 
-if (!params.species_csv) die("Missing --species_csv")
-
 
 // ---------------------------- workflow ----------------------------
 
 workflow {
+
+    if (!params.species_csv) die("Missing --species_csv")
 
     ch_species = Channel.fromPath(params.species_csv, checkIfExists: true)
         .splitCsv(header: true, quote: '"')

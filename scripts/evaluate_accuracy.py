@@ -1,23 +1,29 @@
 """Compare ORF-prediction gene sets against a reference annotation using gffcompare.
 
-Four gene sets are evaluated per species:
-  orf_prediction  — <pred-dir>/<species>/prediction.gtf
-  tiberius        — tiberius_benchmarking/paper/Insecta/<species>/.../tiberius_seqlen.gtf
-  merged          — tiberius + orf_prediction via merge_annotations.py --mode full
-  braker3         — tiberius_benchmarking/paper/Insecta/<species>/.../braker3.gtf
+Gene sets evaluated per species (depending on options provided):
+  orf_prediction    — <pred-dir>/<species>/prediction.gtf
+  tiberius          — tiberius_benchmarking/paper/Insecta/<species>/.../tiberius_seqlen.gtf
+  tiberius_filtered — optional, --tib-filtered-tmpl '<path>/{sp}/<file>.gtf'
+  annevo            — optional, --annevo-tmpl '<path>/{sp}/<file>.gtf'
+  merged            — (tiberius_filtered if given else tiberius) + orf_prediction
+                      via merge_annotations.py --mode full
+  merged_annevo     — merged + annevo (only when --annevo-tmpl is given)
+  braker3           — tiberius_benchmarking/paper/Insecta/<species>/.../braker3.gtf
 
 gffcompare is called as:
   gffcompare --strict-match -e 3 -T -r <ref> -o <prefix> <query>
 
 Outputs:
   <out-dir>/accuracy_table.tsv       — one row per (species, gene_set)
-  <out-dir>/accuracy_figure.pdf      — 3 subplots: gene / transcript / exon F1
+  <out-dir>/accuracy_figure.pdf      — Sensitivity vs Precision per species
   <out-dir>/gffcompare_runs/         — raw gffcompare output kept for inspection
 
 Usage:
   python scripts/evaluate_accuracy.py \\
       --pred-dir results/predictions/run_002_epoch41 \\
-      --out-dir  results/accuracy/run_002_epoch41
+      --out-dir  results/accuracy/run_002_epoch41 \\
+      --tib-filtered-tmpl '/home/gabriell/.../filtered/{sp}/tiberius_filtered.gtf' \\
+      --annevo-tmpl       '/home/gabriell/.../annevo/{sp}/annevo.gtf'
 """
 
 from __future__ import annotations
@@ -43,18 +49,38 @@ _BENCH = Path("/home/gabriell/tiberius_benchmarking")
 
 REF_TMPL        = str(_BENCH / "Insecta/{sp}/annot_cds.gff")
 TIB_TMPL        = str(_BENCH / "paper/Insecta/{sp}/results/predictions/tiberius/tiberius_seqlen.gtf")
-TIB_MERGE_TMPL  = str(_BENCH / "paper/Insecta/{sp}/results/predictions/tiberius/tiberius_seqlen.gtf")
 BRK_TMPL        = str(_BENCH / "paper/Insecta/{sp}/results/predictions/braker3/braker3.gtf")
 MERGE_SCRIPT    = Path("/home/gabriell/tib_hidten/Tiberius/tiberius/scripts/merge_annotations.py")
 
-GENE_SETS = ["orf_prediction", "tiberius", "merged", "braker3"]
+# Full ordered list of possible gene sets. The runtime subset is built in main()
+# based on which CLI options were provided.
+GENE_SETS_ALL = [
+    "orf_prediction",
+    "tiberius",
+    "tiberius_filtered",
+    "annevo",
+    "merged",
+    "merged_annevo",
+    "braker3",
+]
 GS_LABELS = {
-    "orf_prediction": "ORF prediction",
-    "tiberius":       "Tiberius",
-    "merged":         "Merged",
-    "braker3":        "BRAKER3",
+    "orf_prediction":    "ORF prediction",
+    "tiberius":          "Tiberius",
+    "tiberius_filtered": "Tiberius (filtered)",
+    "annevo":            "AnnEvo",
+    "merged":            "Merged",
+    "merged_annevo":     "Merged + AnnEvo",
+    "braker3":           "BRAKER3",
 }
-GS_MARKERS = {"orf_prediction": "o", "tiberius": "s", "merged": "^", "braker3": "D"}
+GS_MARKERS = {
+    "orf_prediction":    "o",
+    "tiberius":          "s",
+    "tiberius_filtered": "v",
+    "annevo":            "P",
+    "merged":            "^",
+    "merged_annevo":     "X",
+    "braker3":           "D",
+}
 
 LEVELS = ["gene", "transcript", "exon"]
 LEVEL_LABELS = {"gene": "Gene", "transcript": "Transcript", "exon": "Exon"}
@@ -72,6 +98,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="Output directory for table, figure, and gffcompare runs.")
     ap.add_argument("--species", nargs="*", default=None,
                     help="Explicit list of species (default: all with prediction.gtf).")
+    ap.add_argument("--tib-filtered-tmpl", type=str, default=None,
+                    help="Path template for protein-filtered Tiberius GTF, with '{sp}' for the "
+                         "species name. When given, it is added as a separate gene set "
+                         "'tiberius_filtered' and used in place of full Tiberius for the merge.")
+    ap.add_argument("--annevo-tmpl", type=str, default=None,
+                    help="Path template for AnnEvo GTF, with '{sp}' for the species name. "
+                         "When given, it is added as a separate gene set 'annevo' and merged "
+                         "on top of the (tiberius_filtered + orf_prediction) merge to produce "
+                         "gene set 'merged_annevo'.")
     return ap.parse_args(argv)
 
 
@@ -153,6 +188,18 @@ def main(argv: list[str] | None = None) -> int:
         sys.exit("No species with prediction.gtf found — check --pred-dir.")
     print(f"Species ({len(species_list)}): {species_list}", flush=True)
 
+    # build active gene-set list (preserves canonical order)
+    has_tib_filt = args.tib_filtered_tmpl is not None
+    has_annevo   = args.annevo_tmpl is not None
+    drop = set()
+    if not has_tib_filt:
+        drop.add("tiberius_filtered")
+    if not has_annevo:
+        drop.add("annevo")
+        drop.add("merged_annevo")
+    gene_sets = [gs for gs in GENE_SETS_ALL if gs not in drop]
+    print(f"Gene sets: {gene_sets}", flush=True)
+
     table_rows: list[dict] = []
 
     for sp in species_list:
@@ -160,8 +207,9 @@ def main(argv: list[str] | None = None) -> int:
         ref      = Path(REF_TMPL.format(sp=sp))
         pred_gtf = args.pred_dir / sp / "prediction.gtf"
         tib_gtf  = Path(TIB_TMPL.format(sp=sp))
-        tib_merge_gtf = Path(TIB_MERGE_TMPL.format(sp=sp))
         brk_gtf  = Path(BRK_TMPL.format(sp=sp))
+        tib_filt_gtf = Path(args.tib_filtered_tmpl.format(sp=sp)) if has_tib_filt else None
+        annevo_gtf   = Path(args.annevo_tmpl.format(sp=sp))       if has_annevo   else None
 
         if not ref.exists():
             print(f"  [skip] missing reference: {ref}", flush=True)
@@ -183,15 +231,31 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(f"  [warn] missing tiberius GTF: {tib_gtf}", flush=True)
 
+        if has_tib_filt:
+            if tib_filt_gtf.exists():
+                gene_set_gtfs["tiberius_filtered"] = tib_filt_gtf
+            else:
+                print(f"  [warn] missing tiberius_filtered GTF: {tib_filt_gtf}", flush=True)
+
+        if has_annevo:
+            if annevo_gtf.exists():
+                gene_set_gtfs["annevo"] = annevo_gtf
+            else:
+                print(f"  [warn] missing annevo GTF: {annevo_gtf}", flush=True)
+
         if brk_gtf.exists():
             gene_set_gtfs["braker3"] = brk_gtf
         else:
             print(f"  [warn] missing braker3 GTF: {brk_gtf}", flush=True)
 
-        # build merged
+        # choose base Tiberius for the merge: filtered if provided, else full
+        tib_merge_gtf = tib_filt_gtf if has_tib_filt else tib_gtf
+        tib_merge_label = "tiberius_filtered" if has_tib_filt else "tiberius"
+
+        # build merged = (tiberius or tiberius_filtered) + orf_prediction
         merged_gtf = sp_work / "merged.gtf"
         if tib_merge_gtf.exists() and pred_gtf.exists():
-            print("  merging tiberius + orf_prediction", flush=True)
+            print(f"  merging {tib_merge_label} + orf_prediction", flush=True)
             if _run_merge(tib_merge_gtf, pred_gtf, merged_gtf):
                 gene_set_gtfs["merged"] = merged_gtf
             else:
@@ -200,8 +264,26 @@ def main(argv: list[str] | None = None) -> int:
             missing_m = [str(p) for p in (tib_merge_gtf, pred_gtf) if not p.exists()]
             print(f"  [warn] skipping merge — missing: {missing_m}", flush=True)
 
+        # build merged_annevo = merged + annevo (only if annevo and merged both available)
+        if has_annevo:
+            merged_annevo_gtf = sp_work / "merged_annevo.gtf"
+            base_merged = gene_set_gtfs.get("merged")
+            if base_merged is not None and annevo_gtf.exists():
+                print("  merging merged + annevo", flush=True)
+                if _run_merge(base_merged, annevo_gtf, merged_annevo_gtf):
+                    gene_set_gtfs["merged_annevo"] = merged_annevo_gtf
+                else:
+                    print("  [warn] merged_annevo produced empty output — skipping", flush=True)
+            else:
+                missing_ma = []
+                if base_merged is None:
+                    missing_ma.append("merged.gtf (prior step failed)")
+                if not annevo_gtf.exists():
+                    missing_ma.append(str(annevo_gtf))
+                print(f"  [warn] skipping merged_annevo — missing: {missing_ma}", flush=True)
+
         # run gffcompare for each available gene set
-        for gs in GENE_SETS:
+        for gs in gene_sets:
             gtf = gene_set_gtfs.get(gs)
             if gtf is None:
                 continue
@@ -307,7 +389,7 @@ def main(argv: list[str] | None = None) -> int:
     ] + [
         Line2D([0], [0], marker=GS_MARKERS[gs], color="k",
                linestyle="None", markersize=8, label=GS_LABELS[gs])
-        for gs in GENE_SETS
+        for gs in gene_sets
     ]
     fig.legend(handles=legend_handles, bbox_to_anchor=(1.01, 0.5),
                loc="center left", frameon=True, fontsize=9,

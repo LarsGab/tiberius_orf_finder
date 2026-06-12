@@ -44,15 +44,15 @@ params.chunk_len        = (params.containsKey('chunk_len') && params.chunk_len !
 
 def die(msg) { log.error msg; System.exit(1) }
 
-if (!params.species_csv)   die("Missing --species_csv")
-if (!(params.varus_dir || params.varus_runpl)) die("Missing --varus_dir or --varus_runpl")
-if (!params.varus_impl)    die("Missing --varus_impl")
-if (!params.hisat_dir)     die("Missing --hisat_dir")
-
 
 // ---------------------------- workflow ----------------------------
 
 workflow {
+
+    if (!params.species_csv)   die("Missing --species_csv")
+    if (!(params.varus_dir || params.varus_runpl)) die("Missing --varus_dir or --varus_runpl")
+    if (!params.varus_impl)    die("Missing --varus_impl")
+    if (!params.hisat_dir)     die("Missing --hisat_dir")
 
     ch_species = Channel.fromPath(params.species_csv, checkIfExists: true)
         .splitCsv(header: true)

@@ -26,7 +26,7 @@ set -euo pipefail
 PROJDIR=/home/gabriell/tiberius_orf_finder
 RESULTS_DIR=${PROJDIR}/results/vertebrates_test
 ANNEVO_DIR=/home/gabriell/programs/ANNEVO
-MODEL_DIR=${ANNEVO_DIR}/models
+MODEL_DIR=${ANNEVO_DIR}/saved_model
 
 mkdir -p "${PROJDIR}/logs"
 
@@ -57,7 +57,7 @@ test -s "${MODEL}"  || { echo "missing model: ${MODEL}"   >&2; exit 2; }
 mkdir -p "${OUTDIR}"
 
 eval "$(micromamba shell hook --shell bash)"
-micromamba activate annevo
+micromamba activate ANNEVO
 
 echo "[$(date -Iseconds)] species=${species} lineage=${lineage}"
 echo "[$(date -Iseconds)] genome=${GENOME}"

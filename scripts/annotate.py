@@ -367,6 +367,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if intermediate_gtf.exists():
         intermediate_gtf.unlink()
+    # b2m's _merge_replace_center assumes the chunk length T is even
+    # (it splits at T//2 and compares the two halves elementwise). Pass
+    # an even T_max so the repred-merge broadcast lines up; the model
+    # still sees chunks padded to chunk_len via _encode_b2m_to_model.
+    t_max_b2m = chunk_len - (chunk_len % 2)
     b2m.tools.annotate.annotate_genome(
         fasta=transcripts_fa,
         predict_func=predict_func,
@@ -374,7 +379,7 @@ def main(argv: list[str] | None = None) -> int:
         output=intermediate_gtf,
         log_file=out_log,
         model_name="tiberius_orf",
-        T_max=chunk_len,
+        T_max=t_max_b2m,
         T_delta=0.1,
         min_sequence_size=1,
         reprediction_factor=0.5,

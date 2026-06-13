@@ -18,7 +18,7 @@
 #SBATCH --partition=vision
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=64G
+#SBATCH --mem=130G
 #SBATCH --time=24:00:00
 #SBATCH --array=0-8
 #SBATCH --output=/home/gabriell/tiberius_orf_finder/logs/orffinder_vert_test_%A_%a.out
@@ -30,7 +30,7 @@ PROJDIR=/home/gabriell/tiberius_orf_finder
 RESULTS_DIR=${PROJDIR}/results/vertebrates_test
 
 # >>> set these two to the checkpoint you want to benchmark <<<
-WEIGHTS=${PROJDIR}/results/models/cnn_lstm_vertebrates_run001/epoch_XXX.weights.h5
+WEIGHTS=${PROJDIR}/results/models/cnn_lstm_vertebrates_run001/best.weights.h5
 CONFIG=${PROJDIR}/configs/cnn_lstm_vertebrates_run001.yaml
 
 mkdir -p "${PROJDIR}/logs"
@@ -83,6 +83,8 @@ python scripts/annotate.py \
     --genome        "${GENOME}" \
     --weights       "${WEIGHTS}" \
     --config        "${CONFIG}" \
-    --out           "${OUTGTF}" \
-    --batch-size    200 \
+    --out-dir           "${OUTDIR}" \
+    --batch-size    16 \
     --threads       "${SLURM_CPUS_PER_TASK}"
+
+

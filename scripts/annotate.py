@@ -50,7 +50,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--stringtie-gtf", type=Path,
                      help="StringTie GTF (skip running StringTie).")
-    src.add_argument("--transcripts-fa", type=Path,
+    ap.add_argument("--transcripts-fa", type=Path, default=None,
                      help="FASTA of assembled transcripts.")
     src.add_argument("--bam", type=Path,
                      help="Sorted alignment BAM (run StringTie internally).")
@@ -273,7 +273,7 @@ def main(argv: list[str] | None = None) -> int:
         stringtie_gtf = args.stringtie_gtf
 
     # 2. extract transcripts FASTA via gffread
-    if args.transcripts_fa is not None:
+    if args.transcripts_fa is None:
         transcripts_fa = args.out_dir / "transcripts.fa"
         print(f"Extracting transcripts -> {transcripts_fa}", flush=True)
         _run_cmd(["gffread", "-w", str(transcripts_fa),
@@ -316,10 +316,9 @@ def main(argv: list[str] | None = None) -> int:
     # transcript-coord ORF back to genomic CDS lines on the fly via the
     # postprocess hook. The b2m intermediate GTF (under tmp_root) is a
     # by-product we ignore — the final genomic GTF is args.out.
-    args.out.parent.mkdir(parents=True, exist_ok=True)
     intermediate_gtf = args.out_dir / "orfs_local.gtf"
     out_gtf = args.out_dir / "orfs.gtf"
-    out_log = args.out[:-3] + "orfs.log"
+    out_log = args.out_dir / "orfs.log"
     line_counter = [0]
 
     def postprocess(_fasta, annot):
@@ -360,7 +359,7 @@ def main(argv: list[str] | None = None) -> int:
         group_size_limit=1_000_000_000,
     )
 
-    print(f"Wrote {line_counter[0]} CDS lines to {args.out}", flush=True)
+    print(f"Wrote {line_counter[0]} CDS lines to {out_gtf}", flush=True)
 
     if cleanup:
         shutil.rm(intermediate_gtf, ignore_errors=True)

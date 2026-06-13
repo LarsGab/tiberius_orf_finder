@@ -32,6 +32,7 @@ CLI::
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -39,10 +40,28 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
+os.environ.setdefault("TF_GPU_ALLOCATOR", "cuda_malloc_async")
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 import numpy as np
 import yaml
+
+
+def _enable_gpu_memory_growth() -> None:
+    """Switch TF off its default preallocate-everything mode.
+
+    Without growth enabled, an oversized intermediate workspace surfaces as
+    'illegal memory access' on whichever kernel happens to be running
+    (typically softmax / RowReduceKernel) instead of as a clean OOM.
+    """
+    import tensorflow as tf
+
+    for gpu in tf.config.list_physical_devices("GPU"):
+        try:
+            tf.config.experimental.set_memory_growth(gpu, True)
+        except Exception:
+            pass
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -180,19 +199,23 @@ def _make_predict_func(
         if N == 0:
             return np.zeros((0, T), dtype=np.int32), None
         x, pad_mask = _encode_b2m_to_model(fasta.nuc, chunk_len)
-
-        logits = np.empty((N, chunk_len, 6), dtype=np.float32)
-        for i in range(0, N, batch_size):
-            logits[i:i + batch_size] = model(
-                x[i:i + batch_size], training=False
-            ).numpy()
-
         nuc_one_hot = x[..., :5]
-        labels = viterbi_decode_batch(
-            hmm, logits, nuc_one_hot, pad_mask=pad_mask
-        )
-        labels_b2m = _TIB_TO_B2M[labels[:, :T]]
-        return labels_b2m.astype(np.int32), None
+
+        # Chunk NN forward *and* HMM decode by batch_size. b2m can pack
+        # tens of thousands of chunks into a single predict call; running
+        # softmax + tf.scan over all of them at once was overflowing GPU
+        # workspace and surfacing as an illegal memory access on the
+        # softmax kernel.
+        labels_out = np.empty((N, T), dtype=np.int32)
+        for i in range(0, N, batch_size):
+            sl = slice(i, i + batch_size)
+            logits_b = model(x[sl], training=False).numpy()
+            labels_b = viterbi_decode_batch(
+                hmm, logits_b, nuc_one_hot[sl], pad_mask=pad_mask[sl],
+            )
+            labels_out[sl] = labels_b[:, :T]
+
+        return _TIB_TO_B2M[labels_out].astype(np.int32), None
 
     return predict_func
 
@@ -283,6 +306,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # 3. load model + HMM
     import tensorflow as tf  # noqa: F401
+    _enable_gpu_memory_growth()
     import bricks2marble as b2m
     from tiberius_orf.data.label_transcripts import parse_stringtie_gtf
     from tiberius_orf.hmm.decode import build_decoder_hmm

@@ -50,6 +50,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--stringtie-gtf", type=Path,
                      help="StringTie GTF (skip running StringTie).")
+    src.add_argument("--transcripts-fa", type=Path,
+                     help="FASTA of assembled transcripts.")
     src.add_argument("--bam", type=Path,
                      help="Sorted alignment BAM (run StringTie internally).")
     ap.add_argument("--genome", type=Path, required=True,
@@ -57,7 +59,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--weights", type=Path, required=True,
                     help="Trained model weights (.h5).")
     ap.add_argument("--config", type=Path, default=Path("configs/default.yaml"))
-    ap.add_argument("--out", type=Path, required=True,
+    ap.add_argument("--out-dir", type=Path, required=True,
                     help="Output GTF path.")
     ap.add_argument("--batch-size", type=int, default=200,
                     help="Inference batch size (default 200).")
@@ -252,19 +254,13 @@ def main(argv: list[str] | None = None) -> int:
     chunk_len = dc["chunk_len"]
 
     # workdir
-    if args.tmp_dir is None:
-        tmp_root = Path(tempfile.mkdtemp(prefix="annotate_"))
-        cleanup_default = True
-    else:
-        tmp_root = args.tmp_dir
-        tmp_root.mkdir(parents=True, exist_ok=True)
-        cleanup_default = False
-    cleanup = cleanup_default and not args.keep_tmp
-    print(f"Workdir: {tmp_root}", flush=True)
+    args.out_dir.mkdir(parents=True, exist_ok=True)
+    cleanup = False
+    print(f"Workdir: {args.out_dir}", flush=True)
 
     # 1. resolve StringTie GTF
     if args.bam is not None:
-        stringtie_gtf = tmp_root / "stringtie.gtf"
+        stringtie_gtf = args.out_dir / "stringtie.gtf"
         print(f"Running StringTie on {args.bam} "
               f"(longread={args.longread})", flush=True)
         st_cmd = ["stringtie", str(args.bam),
@@ -277,10 +273,13 @@ def main(argv: list[str] | None = None) -> int:
         stringtie_gtf = args.stringtie_gtf
 
     # 2. extract transcripts FASTA via gffread
-    transcripts_fa = tmp_root / "transcripts.fa"
-    print(f"Extracting transcripts -> {transcripts_fa}", flush=True)
-    _run_cmd(["gffread", "-w", str(transcripts_fa),
-              "-g", str(args.genome), str(stringtie_gtf)])
+    if args.transcripts_fa is not None:
+        transcripts_fa = args.out_dir / "transcripts.fa"
+        print(f"Extracting transcripts -> {transcripts_fa}", flush=True)
+        _run_cmd(["gffread", "-w", str(transcripts_fa),
+                "-g", str(args.genome), str(stringtie_gtf)])
+    else:
+        transcripts_fa = args.transcripts_fa
 
     # 3. load model + HMM
     import tensorflow as tf  # noqa: F401
@@ -318,12 +317,14 @@ def main(argv: list[str] | None = None) -> int:
     # postprocess hook. The b2m intermediate GTF (under tmp_root) is a
     # by-product we ignore — the final genomic GTF is args.out.
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text("")
+    intermediate_gtf = args.out_dir / "orfs_local.gtf"
+    out_gtf = args.out_dir / "orfs.gtf"
+    out_log = args.out[:-3] + "orfs.log"
     line_counter = [0]
 
-    def postprocess(_fasta, annotation):
-        with open(args.out, "a") as fh:
-            for seq_ann in annotation:
+    def postprocess(_fasta, annot):
+        with open(out_gtf, "a") as fh:
+            for seq_ann in annot:
                 for tx in seq_ann:
                     tid = tx.sequence
                     if tid not in transcripts:
@@ -337,19 +338,18 @@ def main(argv: list[str] | None = None) -> int:
                     for line in lines:
                         fh.write(line + "\n")
                         line_counter[0] += 1
-        return annotation
+        return annot
 
-    intermediate_gtf = tmp_root / "tiberius_orf_tx.gtf"
-    intermediate_log = tmp_root / "tiberius_orf_tx.log"
+
+
     if intermediate_gtf.exists():
         intermediate_gtf.unlink()
-
     b2m.tools.annotate.annotate_genome(
         fasta=transcripts_fa,
         predict_func=predict_func,
         repredict_func=repredict_func,
         output=intermediate_gtf,
-        log_file=intermediate_log,
+        log_file=out_log,
         model_name="tiberius_orf",
         T_max=chunk_len,
         T_delta=0.1,
@@ -363,9 +363,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Wrote {line_counter[0]} CDS lines to {args.out}", flush=True)
 
     if cleanup:
-        shutil.rmtree(tmp_root, ignore_errors=True)
-    else:
-        print(f"Tempdir kept: {tmp_root}", flush=True)
+        shutil.rm(intermediate_gtf, ignore_errors=True)
     return 0
 
 

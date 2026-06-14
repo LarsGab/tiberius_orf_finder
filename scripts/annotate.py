@@ -115,6 +115,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="Drop predicted ORFs whose total coding length is "
                          "below this many nt (Tiberius default: 200). "
                          "Set to 0 to disable.")
+    ap.add_argument("--single-isoform", action="store_true",
+                    help="Keep at most one transcript per StringTie gene_id "
+                         "(the one with the longest predicted CDS, ties "
+                         "broken by transcript_id). Approximates the "
+                         "single-isoform reduction Tiberius/BRAKER do.")
     return ap.parse_args(argv)
 
 
@@ -133,6 +138,22 @@ def _gtf_attr(attr_col: str, key: str) -> str | None:
         if len(parts) == 2 and parts[0] == key:
             return parts[1].strip().strip('"')
     return None
+
+
+def _parse_tx_to_gene(gtf_path: Path) -> dict[str, str]:
+    """Build a ``{transcript_id: gene_id}`` map from a StringTie GTF."""
+    out: dict[str, str] = {}
+    for raw in Path(gtf_path).read_text().splitlines():
+        if not raw or raw.startswith("#"):
+            continue
+        f = raw.split("\t")
+        if len(f) < 9:
+            continue
+        tid = _gtf_attr(f[8], "transcript_id")
+        gid = _gtf_attr(f[8], "gene_id")
+        if tid is not None and gid is not None and tid not in out:
+            out[tid] = gid
+    return out
 
 
 def _filter_stringtie_gtf(
@@ -473,7 +494,16 @@ def main(argv: list[str] | None = None) -> int:
     intermediate_gtf = args.out_dir / "orfs_local.gtf"
     out_gtf = args.out_dir / "orfs.gtf"
     out_log = args.out_dir / "orfs.log"
-    line_counter = [0]
+
+    # tx -> StringTie gene_id (only needed for --single-isoform)
+    tx_to_gene: dict[str, str] = (
+        _parse_tx_to_gene(stringtie_gtf) if args.single_isoform else {}
+    )
+
+    # Buffer per-tx output so single-isoform selection can run after
+    # annotate_genome finishes (postprocess may be called once per b2m
+    # group). tid -> (coding_length, [gtf_lines])
+    per_tx_output: dict[str, tuple[int, list[str]]] = {}
 
     def postprocess(_fasta, annot):
         # Same short-ORF filter Tiberius uses (b2m.tools.check_min_coding_length
@@ -482,21 +512,19 @@ def main(argv: list[str] | None = None) -> int:
             b2m.tools.check_min_coding_length(
                 annot, args.min_coding_length, remove=True,
             )
-        with open(out_gtf, "a") as fh:
-            for seq_ann in annot:
-                for tx in seq_ann:
-                    tid = tx.sequence
-                    if tid not in transcripts:
-                        continue
-                    cds_intervals = [(c.start, c.end) for c in tx.cds]
-                    if not cds_intervals:
-                        continue
-                    lines = _project_tx_intervals_to_genomic(
-                        tid, cds_intervals, transcripts[tid], "tiberius_orf",
-                    )
-                    for line in lines:
-                        fh.write(line + "\n")
-                        line_counter[0] += 1
+        for seq_ann in annot:
+            for tx in seq_ann:
+                tid = tx.sequence
+                if tid not in transcripts:
+                    continue
+                cds_intervals = [(c.start, c.end) for c in tx.cds]
+                if not cds_intervals:
+                    continue
+                coding_length = sum(e - s for s, e in cds_intervals)
+                lines = _project_tx_intervals_to_genomic(
+                    tid, cds_intervals, transcripts[tid], "tiberius_orf",
+                )
+                per_tx_output[tid] = (coding_length, lines)
         return annot
 
 
@@ -524,7 +552,38 @@ def main(argv: list[str] | None = None) -> int:
         group_size_limit=1_000_000_000,
     )
 
-    print(f"Wrote {line_counter[0]} CDS lines to {out_gtf}", flush=True)
+    # Pick which transcripts to emit. With --single-isoform, group by the
+    # StringTie gene_id and keep the transcript with the longest predicted
+    # CDS (ties broken by transcript_id). Otherwise keep every transcript
+    # that produced an ORF.
+    if args.single_isoform:
+        best_per_gene: dict[str, tuple[int, str]] = {}
+        for tid, (length, _lines) in per_tx_output.items():
+            gid = tx_to_gene.get(tid, tid)
+            cur = best_per_gene.get(gid)
+            if cur is None or length > cur[0] or (length == cur[0] and tid < cur[1]):
+                best_per_gene[gid] = (length, tid)
+        keep_tids: set[str] = {tid for _, tid in best_per_gene.values()}
+        print(
+            f"single-isoform: kept {len(keep_tids)} of {len(per_tx_output)} "
+            f"transcripts ({len(best_per_gene)} StringTie genes)",
+            flush=True,
+        )
+    else:
+        keep_tids = set(per_tx_output)
+
+    n_lines = 0
+    with open(out_gtf, "w") as fh:
+        for tid in sorted(keep_tids):
+            for line in per_tx_output[tid][1]:
+                fh.write(line + "\n")
+                n_lines += 1
+
+    print(
+        f"Wrote {n_lines} CDS lines from {len(keep_tids)} transcripts "
+        f"to {out_gtf}",
+        flush=True,
+    )
 
     if cleanup:
         shutil.rm(intermediate_gtf, ignore_errors=True)

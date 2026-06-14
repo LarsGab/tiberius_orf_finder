@@ -98,12 +98,121 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="Workdir for intermediate files. Defaults to a tempdir.")
     ap.add_argument("--keep-tmp", action="store_true",
                     help="Don't delete the tempdir on exit.")
+    # reference-free StringTie pre-filters (approximate the categories that
+    # the TFRecord-build pipeline drops via project_labels)
+    ap.add_argument("--min-cov", type=float, default=None,
+                    help="Drop StringTie transcripts whose 'cov' attribute "
+                         "is below this value. Typical: 1.0.")
+    ap.add_argument("--min-tpm", type=float, default=None,
+                    help="Drop StringTie transcripts whose 'TPM' attribute "
+                         "is below this value.")
+    ap.add_argument("--drop-unstranded", action="store_true",
+                    help="Drop transcripts whose StringTie strand is '.'.")
+    ap.add_argument("--drop-single-exon", action="store_true",
+                    help="Drop transcripts assembled from a single exon "
+                         "(often genomic/intronic noise).")
+    ap.add_argument("--min-coding-length", type=int, default=200,
+                    help="Drop predicted ORFs whose total coding length is "
+                         "below this many nt (Tiberius default: 200). "
+                         "Set to 0 to disable.")
     return ap.parse_args(argv)
 
 
 def _run_cmd(cmd: list[str]) -> None:
     print(f"  $ {' '.join(map(str, cmd))}", flush=True)
     subprocess.run(cmd, check=True)
+
+
+def _gtf_attr(attr_col: str, key: str) -> str | None:
+    """Pull ``key`` out of a GTF attribute column (``key "value";`` form)."""
+    for chunk in attr_col.strip().strip(";").split(";"):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        parts = chunk.split(None, 1)
+        if len(parts) == 2 and parts[0] == key:
+            return parts[1].strip().strip('"')
+    return None
+
+
+def _filter_stringtie_gtf(
+    in_path: Path,
+    out_path: Path,
+    min_cov: float | None,
+    min_tpm: float | None,
+    drop_unstranded: bool,
+    drop_single_exon: bool,
+) -> tuple[int, int]:
+    """Filter a StringTie GTF by per-transcript metadata.
+
+    The TFRecord-build pipeline drops ``dropped_antisense_only`` /
+    ``dropped_ref_partial`` / ``dropped_not_contained`` using the reference
+    annotation. These flags approximate that filter without a reference:
+    StringTie noise (low coverage, unstranded, single-exon) is the main
+    source of FP ORFs once annotate.py is unrestricted.
+
+    Returns ``(n_kept, n_dropped)``.
+    """
+    from collections import defaultdict
+
+    tx_strand: dict[str, str] = {}
+    tx_cov: dict[str, float] = {}
+    tx_tpm: dict[str, float] = {}
+    tx_exon_count: dict[str, int] = defaultdict(int)
+    lines_by_tid: dict[str, list[str]] = defaultdict(list)
+    header_lines: list[str] = []
+
+    for raw in Path(in_path).read_text().splitlines():
+        if not raw or raw.startswith("#"):
+            header_lines.append(raw)
+            continue
+        f = raw.split("\t")
+        if len(f) < 9:
+            continue
+        tid = _gtf_attr(f[8], "transcript_id")
+        if tid is None:
+            continue
+        lines_by_tid[tid].append(raw)
+        if f[2] == "transcript":
+            tx_strand[tid] = f[6]
+            cov = _gtf_attr(f[8], "cov")
+            tpm = _gtf_attr(f[8], "TPM")
+            if cov is not None:
+                try:
+                    tx_cov[tid] = float(cov)
+                except ValueError:
+                    pass
+            if tpm is not None:
+                try:
+                    tx_tpm[tid] = float(tpm)
+                except ValueError:
+                    pass
+        elif f[2] == "exon":
+            tx_exon_count[tid] += 1
+            # Fall back to strand from exon lines if no transcript record.
+            tx_strand.setdefault(tid, f[6])
+
+    keep: set[str] = set()
+    for tid in lines_by_tid:
+        if drop_unstranded and tx_strand.get(tid, ".") == ".":
+            continue
+        if min_cov is not None and tx_cov.get(tid, 0.0) < min_cov:
+            continue
+        if min_tpm is not None and tx_tpm.get(tid, 0.0) < min_tpm:
+            continue
+        if drop_single_exon and tx_exon_count.get(tid, 0) <= 1:
+            continue
+        keep.add(tid)
+
+    with Path(out_path).open("w") as fh:
+        for h in header_lines:
+            fh.write(h + "\n")
+        for tid, lines in lines_by_tid.items():
+            if tid in keep:
+                for ln in lines:
+                    fh.write(ln + "\n")
+
+    return len(keep), len(lines_by_tid) - len(keep)
 
 
 # tiberius_orf label index -> bricks2marble's 15-state index. The b2m
@@ -295,6 +404,27 @@ def main(argv: list[str] | None = None) -> int:
     else:
         stringtie_gtf = args.stringtie_gtf
 
+    # 1b. optional reference-free filtering of the StringTie GTF
+    if (args.min_cov is not None or args.min_tpm is not None
+            or args.drop_unstranded or args.drop_single_exon):
+        filtered_gtf = args.out_dir / "stringtie.filtered.gtf"
+        kept, dropped = _filter_stringtie_gtf(
+            stringtie_gtf, filtered_gtf,
+            min_cov=args.min_cov,
+            min_tpm=args.min_tpm,
+            drop_unstranded=args.drop_unstranded,
+            drop_single_exon=args.drop_single_exon,
+        )
+        print(
+            f"Filtered StringTie GTF "
+            f"(min_cov={args.min_cov}, min_tpm={args.min_tpm}, "
+            f"drop_unstranded={args.drop_unstranded}, "
+            f"drop_single_exon={args.drop_single_exon}): "
+            f"kept {kept}, dropped {dropped} -> {filtered_gtf}",
+            flush=True,
+        )
+        stringtie_gtf = filtered_gtf
+
     # 2. extract transcripts FASTA via gffread
     if args.transcripts_fa is None:
         transcripts_fa = args.out_dir / "transcripts.fa"
@@ -346,6 +476,12 @@ def main(argv: list[str] | None = None) -> int:
     line_counter = [0]
 
     def postprocess(_fasta, annot):
+        # Same short-ORF filter Tiberius uses (b2m.tools.check_min_coding_length
+        # at 200 nt). Removed in place; nothing downstream sees the dropped tx.
+        if args.min_coding_length > 0:
+            b2m.tools.check_min_coding_length(
+                annot, args.min_coding_length, remove=True,
+            )
         with open(out_gtf, "a") as fh:
             for seq_ann in annot:
                 for tx in seq_ann:

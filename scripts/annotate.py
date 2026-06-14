@@ -120,6 +120,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                          "(the one with the longest predicted CDS, ties "
                          "broken by transcript_id). Approximates the "
                          "single-isoform reduction Tiberius/BRAKER do.")
+    ap.add_argument("--min-utr-5", type=int, default=0,
+                    help="Drop predicted ORFs whose START is within this "
+                         "many nt of the transcript 5' end. Reference-free "
+                         "proxy for the 'dropped_not_contained' curation "
+                         "category (truncated 5' assemblies). 0 disables.")
+    ap.add_argument("--min-utr-3", type=int, default=0,
+                    help="Drop predicted ORFs whose STOP is within this "
+                         "many nt of the transcript 3' end. Same idea as "
+                         "--min-utr-5 for truncated 3' assemblies. "
+                         "0 disables.")
     return ap.parse_args(argv)
 
 
@@ -519,6 +529,17 @@ def main(argv: list[str] | None = None) -> int:
                     continue
                 cds_intervals = [(c.start, c.end) for c in tx.cds]
                 if not cds_intervals:
+                    continue
+                # Reference-free proxy for the curation pipeline's
+                # 'dropped_not_contained' category: skip ORFs whose START
+                # or STOP sits flush against a transcript end (= the
+                # StringTie assembly is probably truncated).
+                orf_start = cds_intervals[0][0]
+                orf_end   = cds_intervals[-1][1]
+                tx_len    = transcripts[tid].length
+                if args.min_utr_5 > 0 and orf_start < args.min_utr_5:
+                    continue
+                if args.min_utr_3 > 0 and (tx_len - orf_end) < args.min_utr_3:
                     continue
                 coding_length = sum(e - s for s, e in cds_intervals)
                 lines = _project_tx_intervals_to_genomic(

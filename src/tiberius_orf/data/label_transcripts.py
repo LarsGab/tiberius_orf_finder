@@ -6,9 +6,20 @@ Inputs
 * Reference GFF/GTF (CDS + stop_codon features for a curated annotation)
 
 For each StringTie transcript the module decides one of:
-* ``ir_only``                 - no same-strand reference CDS overlaps  -> all-IR negative
-* ``kept_single`` / ``kept_multi`` - >=1 reference CDS fully contained -> keep the longest
-* ``dropped_*``               - partial overlap, antisense, or partial reference CDS
+* ``ir_only``                 - no overlapping reference CDS         -> all-IR negative
+* ``kept_single`` / ``kept_multi`` - >=1 complete CDS fully contained -> keep the longest
+* ``kept_partial``            - complete ref CDS overlaps same-strand but does
+                                 not fully fit on the transcript     -> label the
+                                 longest contiguous projectable run as CDS, rest IR
+                                 (also recorded in ``ProjectionResult.partial`` so
+                                 downstream training can downweight boundary
+                                 uncertainty)
+* ``antisense_ir``            - only opposite-strand ref CDS overlaps -> all-IR
+                                 (transcribed but no on-strand coding signal)
+* ``ref_partial_ir``          - only incomplete reference CDS overlaps (frame
+                                 not derivable)                       -> all-IR
+
+No StringTie transcript is dropped: every transcript becomes a training example.
 
 Labels per transcript position (int8):
     0 IR   1 START   2 E1   3 E2   4 E0   5 STOP
@@ -87,6 +98,9 @@ class ProjectionResult:
     labels: dict[str, np.ndarray] = field(default_factory=dict)
     stats: dict[str, int] = field(default_factory=lambda: defaultdict(int))
     chosen_ref: dict[str, str] = field(default_factory=dict)  # tid -> ref_tid
+    # tid -> {has_5p, has_3p, t_start, t_end, ref_start_pos, ref_end_pos,
+    #         ref_total_len}; populated only for ``kept_partial`` transcripts.
+    partial: dict[str, dict] = field(default_factory=dict)
 
 
 # ---------- parsing ----------
@@ -227,6 +241,61 @@ def _project_ref_onto_transcript(
     return t_coords[0], t_coords[-1]
 
 
+def _ref_bases_in_reading_order(r: RefTranscript) -> list[int]:
+    """Return ``r``'s CDS genomic positions in 5'->3' reading order.
+
+    ``cds_parts`` is sorted ascending by genomic start. For '+' strand refs
+    that already matches reading order; for '-' strand refs we reverse it.
+    """
+    bases: list[int] = []
+    for cs, ce in r.cds_parts:
+        bases.extend(range(cs, ce))
+    if r.strand == "-":
+        bases.reverse()
+    return bases
+
+
+def _project_partial(
+    t: StringTieTranscript, r: RefTranscript,
+) -> tuple[int, int, int, int] | None:
+    """Find the longest run of consecutive ref CDS positions that map to
+    consecutive transcript positions on ``t``.
+
+    Returns ``(t_start, t_end, ref_start_pos, ref_end_pos)`` inclusive on both
+    axes, where ``ref_*_pos`` is the 0-based index into the CDS in reading
+    order (0 = first base of START codon). Returns ``None`` if no base maps.
+
+    Used for ``kept_partial`` rescue when the full ref CDS is either truncated
+    by the assembly's exon boundaries or split by a missing intron.
+    """
+    ref_g = _ref_bases_in_reading_order(r)
+    t_coords = [_genomic_to_transcript(t, g) for g in ref_g]
+
+    best: tuple[int, int, int, int, int] | None = None
+    i = 0
+    n = len(t_coords)
+    while i < n:
+        if t_coords[i] is None:
+            i += 1
+            continue
+        j = i
+        while (
+            j + 1 < n
+            and t_coords[j + 1] is not None
+            and t_coords[j + 1] == t_coords[j] + 1
+        ):
+            j += 1
+        length = j - i + 1
+        if best is None or length > best[0]:
+            best = (length, i, j, t_coords[i], t_coords[j])
+        i = j + 1
+
+    if best is None:
+        return None
+    _, ref_s, ref_e, t_s, t_e = best
+    return (t_s, t_e, ref_s, ref_e)
+
+
 # ---------- labeling ----------
 
 def build_labels(length: int,
@@ -239,6 +308,33 @@ def build_labels(length: int,
     labels[end] = STOP
     for i in range(1, end - start):
         labels[start + i] = _FRAME_CYCLE[(i - 1) % 3]
+    return labels
+
+
+def build_partial_labels(
+    length: int,
+    t_start: int,
+    t_end: int,
+    ref_start_pos: int,
+    ref_end_pos: int,
+    ref_total_len: int,
+) -> np.ndarray:
+    """Label only the visible portion of a partially projected ref CDS.
+
+    Outside the visible run: IR. Inside: frame labels derived from the ref
+    reading position, plus START at ``ref_pos==0`` and STOP at
+    ``ref_pos==ref_total_len-1`` if those bases happen to be visible.
+    """
+    labels = np.zeros(length, dtype=np.int8)
+    for k in range(t_end - t_start + 1):
+        ref_pos = ref_start_pos + k
+        t_pos = t_start + k
+        if ref_pos == 0:
+            labels[t_pos] = START
+        elif ref_pos == ref_total_len - 1:
+            labels[t_pos] = STOP
+        else:
+            labels[t_pos] = _FRAME_CYCLE[(ref_pos - 1) % 3]
     return labels
 
 
@@ -275,32 +371,74 @@ def project_labels(
 
         same_strand = [r for r in overlapping if r.strand == t.strand]
         if not same_strand:
-            result.stats["dropped_antisense_only"] += 1
+            # Antisense rescue: only opposite-strand CDSes overlap. There is
+            # no on-strand coding signal so emit all-IR labels; this is the
+            # antisense-lncRNA signal we want the model to learn.
+            result.labels[tid] = build_labels(t.length)
+            result.stats["antisense_ir"] += 1
             continue
 
         contained = []
-        has_partial_ref = False
+        complete_same_strand: list[RefTranscript] = []
         for r in same_strand:
             if not r.complete:
-                has_partial_ref = True
                 continue
+            complete_same_strand.append(r)
             orf = _project_ref_onto_transcript(t, r)
             if orf is not None:
                 contained.append((r, orf))
 
-        if not contained:
-            if has_partial_ref:
-                result.stats["dropped_ref_partial"] += 1
-            else:
-                result.stats["dropped_not_contained"] += 1
+        if contained:
+            # Pick the longest CDS among contained candidates; tie-break by TID.
+            contained.sort(key=lambda ro: (-ro[0].total_cds_len, ro[0].tid))
+            chosen_r, chosen_orf = contained[0]
+            result.labels[tid] = build_labels(t.length, chosen_orf)
+            result.chosen_ref[tid] = chosen_r.tid
+            result.stats["kept_multi" if len(contained) > 1 else "kept_single"] += 1
             continue
 
-        # Pick the longest CDS among contained candidates; tie-break by TID.
-        contained.sort(key=lambda ro: (-ro[0].total_cds_len, ro[0].tid))
-        chosen_r, chosen_orf = contained[0]
-        result.labels[tid] = build_labels(t.length, chosen_orf)
+        if not complete_same_strand:
+            # Only incomplete refs overlap; reading frame is not derivable so
+            # we emit all-IR rather than fabricate frame labels.
+            result.labels[tid] = build_labels(t.length)
+            result.stats["ref_partial_ir"] += 1
+            continue
+
+        # Partial rescue: same-strand complete ref(s) overlap but none fit
+        # fully (5'/3' assembly truncation or missing intron). Pick the
+        # candidate with the longest contiguous projectable run and label
+        # that visible region; the rest of the transcript stays IR.
+        best_partial: tuple[int, RefTranscript, tuple[int, int, int, int]] | None = None
+        for r in complete_same_strand:
+            proj = _project_partial(t, r)
+            if proj is None:
+                continue
+            run_len = proj[1] - proj[0] + 1
+            if best_partial is None or run_len > best_partial[0]:
+                best_partial = (run_len, r, proj)
+
+        if best_partial is None:
+            # g_span overlapped but no base projected (shouldn't normally
+            # happen). Fall back to all-IR rather than drop.
+            result.labels[tid] = build_labels(t.length)
+            result.stats["ref_partial_ir"] += 1
+            continue
+
+        _, chosen_r, (t_s, t_e, ref_s, ref_e) = best_partial
+        result.labels[tid] = build_partial_labels(
+            t.length, t_s, t_e, ref_s, ref_e, chosen_r.total_cds_len,
+        )
         result.chosen_ref[tid] = chosen_r.tid
-        result.stats["kept_multi" if len(contained) > 1 else "kept_single"] += 1
+        result.partial[tid] = {
+            "has_5p": ref_s == 0,
+            "has_3p": ref_e == chosen_r.total_cds_len - 1,
+            "t_start": t_s,
+            "t_end": t_e,
+            "ref_start_pos": ref_s,
+            "ref_end_pos": ref_e,
+            "ref_total_len": chosen_r.total_cds_len,
+        }
+        result.stats["kept_partial"] += 1
 
     return result
 
@@ -325,7 +463,22 @@ def write_outputs(
         for k in sorted(result.stats):
             fh.write(f"{k}\t{result.stats[k]}\n")
 
-    return {"labels": npz_path, "stats": stats_path}
+    partial_path = out_dir / "partial.tsv"
+    with partial_path.open("w", encoding="utf-8") as fh:
+        fh.write(
+            "tid\thas_5p\thas_3p\tt_start\tt_end"
+            "\tref_start_pos\tref_end_pos\tref_total_len\n"
+        )
+        for tid in sorted(result.partial):
+            p = result.partial[tid]
+            fh.write(
+                f"{tid}\t{int(p['has_5p'])}\t{int(p['has_3p'])}"
+                f"\t{p['t_start']}\t{p['t_end']}"
+                f"\t{p['ref_start_pos']}\t{p['ref_end_pos']}"
+                f"\t{p['ref_total_len']}\n"
+            )
+
+    return {"labels": npz_path, "stats": stats_path, "partial": partial_path}
 
 
 def subset_fasta(fasta_in: Path | str, fasta_out: Path | str,

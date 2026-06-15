@@ -135,7 +135,9 @@ def test_no_overlap_is_ir_only(tmp_path):
     assert (res.labels["ST.1"] == IR).all()
 
 
-def test_antisense_only_is_dropped(tmp_path):
+def test_antisense_only_is_ir(tmp_path):
+    # Only an opposite-strand ref overlaps -> emit all-IR labels (antisense
+    # rescue). The transcript is kept in training, not dropped.
     st = tmp_path / "st.gtf"
     _write(st, [
         'chr1\tStringTie\texon\t10\t100\t.\t+\t.\ttranscript_id "ST.1";',
@@ -145,13 +147,19 @@ def test_antisense_only_is_dropped(tmp_path):
         'chr1\tRef\tCDS\t20\t28\t.\t-\t0\ttranscript_id "R.1";',
     ])
     res = project_labels(st, ref)
-    assert res.stats == {"dropped_antisense_only": 1}
-    assert "ST.1" not in res.labels
+    assert res.stats == {"antisense_ir": 1}
+    assert "ST.1" in res.labels
+    assert (res.labels["ST.1"] == IR).all()
+    # No ref was chosen and the transcript is not flagged as partial.
+    assert "ST.1" not in res.chosen_ref
+    assert "ST.1" not in res.partial
 
 
-def test_partial_overlap_is_dropped(tmp_path):
-    # StringTie exon 10..50. Reference CDS 40..60 (extends past the StringTie
-    # exon's 3' end) -> not fully contained, should be dropped.
+def test_partial_overlap_3prime_truncation_is_kept(tmp_path):
+    # StringTie exon g 10..50 -> 0-based [9, 50), length 41, t=0..40.
+    # Ref CDS g 40..60 on '+' -> 0-based [39, 60), 21 nt long (complete).
+    # Visible portion on transcript: g 39..49 -> t = 30..40 (length 11,
+    # ref positions 0..10). 3' end of ref CDS is NOT visible.
     st = tmp_path / "st.gtf"
     _write(st, [
         'chr1\tStringTie\texon\t10\t50\t.\t+\t.\ttranscript_id "ST.1";',
@@ -161,12 +169,64 @@ def test_partial_overlap_is_dropped(tmp_path):
         'chr1\tRef\tCDS\t40\t60\t.\t+\t0\ttranscript_id "R.1";',
     ])
     res = project_labels(st, ref)
-    assert res.stats == {"dropped_not_contained": 1}
+    assert res.stats == {"kept_partial": 1}
+
+    labels = res.labels["ST.1"]
+    assert labels.shape == (41,)
+    # Visible region starts at ref pos 0 -> START at t=30, then frame cycle.
+    assert labels[30] == START
+    assert list(labels[31:41]) == [E1, E2, E0, E1, E2, E0, E1, E2, E0, E1]
+    # No STOP because the 3' end of the ref CDS is not visible.
+    assert STOP not in labels
+    # Flanking region is IR.
+    assert (labels[:30] == IR).all()
+
+    p = res.partial["ST.1"]
+    assert p["has_5p"] is True
+    assert p["has_3p"] is False
+    assert (p["t_start"], p["t_end"]) == (30, 40)
+    assert (p["ref_start_pos"], p["ref_end_pos"]) == (0, 10)
+    assert p["ref_total_len"] == 21
+    assert res.chosen_ref["ST.1"] == "R.1"
 
 
-def test_ref_partial_cds_length_is_dropped(tmp_path):
-    # CDS length 10 is not divisible by 3 -> ref.complete == False
-    # -> classified as dropped_ref_partial.
+def test_partial_overlap_5prime_truncation_is_kept(tmp_path):
+    # StringTie exon g 30..100 -> 0-based [29, 100), length 71, t=0..70.
+    # Ref CDS g 10..39 on '+' -> 0-based [9, 39), 30 nt long (complete).
+    # Visible portion: g 29..38 -> ref positions 20..29 (5' is cut off),
+    # t = 0..9. 3' end of ref CDS IS visible -> STOP at t=9.
+    st = tmp_path / "st.gtf"
+    _write(st, [
+        'chr1\tStringTie\texon\t30\t100\t.\t+\t.\ttranscript_id "ST.1";',
+    ])
+    ref = tmp_path / "ref.gtf"
+    _write(ref, [
+        'chr1\tRef\tCDS\t10\t39\t.\t+\t0\ttranscript_id "R.1";',
+    ])
+    res = project_labels(st, ref)
+    assert res.stats == {"kept_partial": 1}
+
+    labels = res.labels["ST.1"]
+    # ref pos 29 (the last base) -> STOP. ref pos 20..28 use the frame cycle.
+    assert labels[9] == STOP
+    # frame at t=k corresponds to ref_pos = 20 + k for k in 0..8.
+    # _FRAME_CYCLE[(rp-1) % 3]: rp=20 -> FC[1]=E2, rp=21 -> FC[2]=E0, rp=22 -> FC[0]=E1, ...
+    assert list(labels[0:9]) == [E2, E0, E1, E2, E0, E1, E2, E0, E1]
+    assert (labels[10:] == IR).all()
+    # No START because ref pos 0 is not visible.
+    assert START not in labels
+
+    p = res.partial["ST.1"]
+    assert p["has_5p"] is False
+    assert p["has_3p"] is True
+    assert (p["ref_start_pos"], p["ref_end_pos"]) == (20, 29)
+    assert p["ref_total_len"] == 30
+
+
+def test_only_partial_refs_is_ir(tmp_path):
+    # CDS length 10 (not divisible by 3) -> ref.complete == False.
+    # No complete same-strand ref overlaps -> emit all-IR labels (the reading
+    # frame is not derivable from a partial ref, so we don't fabricate one).
     st = tmp_path / "st.gtf"
     _write(st, [
         'chr1\tStringTie\texon\t10\t100\t.\t+\t.\ttranscript_id "ST.1";',
@@ -176,7 +236,9 @@ def test_ref_partial_cds_length_is_dropped(tmp_path):
         'chr1\tRef\tCDS\t20\t29\t.\t+\t0\ttranscript_id "R.1";',
     ])
     res = project_labels(st, ref)
-    assert res.stats == {"dropped_ref_partial": 1}
+    assert res.stats == {"ref_partial_ir": 1}
+    assert (res.labels["ST.1"] == IR).all()
+    assert "ST.1" not in res.partial
 
 
 def test_multi_hit_longest_chosen(tmp_path):
@@ -247,11 +309,11 @@ def test_plus_strand_cds_spanning_matching_intron(tmp_path):
     assert (labels[10:28] != IR).all()
 
 
-def test_plus_strand_cds_spanning_nonmatching_intron_is_dropped(tmp_path):
+def test_plus_strand_cds_spanning_nonmatching_intron_is_kept_partial(tmp_path):
     # StringTie single exon covers everything [0, 50).  Reference CDS has
     # two parts with a genomic intron (20..29) in between that StringTie
-    # treats as part of the exon -> CDS would be non-contiguous in
-    # transcript coords -> dropped.
+    # treats as part of the exon -> CDS is non-contiguous in transcript
+    # coords. The partial rescue labels the longest contiguous run.
     st = tmp_path / "st.gtf"
     _write(st, [
         'chr1\tStringTie\texon\t1\t50\t.\t+\t.\ttranscript_id "ST.1";',
@@ -262,9 +324,51 @@ def test_plus_strand_cds_spanning_nonmatching_intron_is_dropped(tmp_path):
         'chr1\tRef\tCDS\t11\t19\t.\t+\t0\ttranscript_id "R.1";',
         'chr1\tRef\tCDS\t30\t38\t.\t+\t0\ttranscript_id "R.1";',
     ])
-    # Total 18, complete=True; but projection will still be contiguous here
-    # because StringTie treats the intron as part of the exon, so in
-    # transcript coords t=10..18 and t=29..36 are NOT contiguous (gap at
-    # t=19..28 where ref had an intron but StringTie has exon).
     res = project_labels(st, ref)
-    assert res.stats == {"dropped_not_contained": 1}
+    assert res.stats == {"kept_partial": 1}
+
+    labels = res.labels["ST.1"]
+    # Two equal-length runs (t=10..18 ref pos 0..8; t=29..37 ref pos 9..17).
+    # Tie-broken to the first (5'-anchored) run -> START at t=10.
+    assert labels[10] == START
+    assert list(labels[11:18]) == [E1, E2, E0, E1, E2, E0, E1]
+    # ref pos 8 != ref_total-1 -> not STOP, just frame.
+    assert labels[18] != STOP
+    assert labels[18] != IR
+    # The second half (real CDS in genomic terms) gets IR in transcript coords
+    # because StringTie's missing splice breaks contiguity.
+    assert (labels[19:] == IR).all()
+
+    p = res.partial["ST.1"]
+    assert p["has_5p"] is True
+    assert p["has_3p"] is False
+
+
+def test_minus_strand_partial_overlap_is_kept(tmp_path):
+    # Minus-strand single exon g 1..30 -> 0-based [0, 30), t length 30.
+    # Ref CDS on '-' strand at g 20..40 -> 0-based [19, 40), 21 nt (complete).
+    # Visible portion: g 19..29 -> ref positions 10..20 (5' of ref cut off),
+    # corresponding to t positions 0..10 (since t=29-g for single exon).
+    st = tmp_path / "st.gtf"
+    _write(st, [
+        'chr1\tStringTie\texon\t1\t30\t.\t-\t.\ttranscript_id "ST.1";',
+    ])
+    ref = tmp_path / "ref.gtf"
+    _write(ref, [
+        'chr1\tRef\tCDS\t20\t40\t.\t-\t0\ttranscript_id "R.1";',
+    ])
+    res = project_labels(st, ref)
+    assert res.stats == {"kept_partial": 1}
+
+    p = res.partial["ST.1"]
+    # 3' end of ref (last base) is at lowest genomic position; for a -strand
+    # ref at g [19, 40) the last base is g=19 -> visible on this transcript
+    # -> has_3p should be True; the 5' end (g=39) is not visible -> has_5p
+    # should be False.
+    assert p["has_5p"] is False
+    assert p["has_3p"] is True
+    assert p["ref_total_len"] == 21
+    # The visible region must contain a STOP label at the 3' end.
+    labels = res.labels["ST.1"]
+    assert (labels == STOP).any()
+    assert START not in labels

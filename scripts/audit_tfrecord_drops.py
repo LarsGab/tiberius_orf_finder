@@ -118,14 +118,26 @@ def _load_manifest(path: Path) -> list[tuple[str, Path]]:
 
 
 # Order matches label_transcripts.project_labels categories.
-_CATEGORIES = [
+# Current rescue scheme keeps every transcript:
+#   * antisense_ir   was dropped_antisense_only
+#   * kept_partial   was dropped_not_contained
+#   * ref_partial_ir was dropped_ref_partial
+# The legacy dropped_* names are kept here so audits over old stats.tsv
+# files still render their counts (zero on new runs).
+_KEEP_CATEGORIES = (
     "ir_only",
     "kept_single",
     "kept_multi",
+    "antisense_ir",
+    "kept_partial",
+    "ref_partial_ir",
+)
+_LEGACY_DROP_CATEGORIES = (
     "dropped_antisense_only",
     "dropped_ref_partial",
     "dropped_not_contained",
-]
+)
+_CATEGORIES = [*_KEEP_CATEGORIES, *_LEGACY_DROP_CATEGORIES]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -183,12 +195,10 @@ def main(argv: list[str] | None = None) -> int:
             row[cat] = stats.get(cat, 0)
             cat_totals[cat] += stats.get(cat, 0)
 
-        # Sanity checks: labels keys should equal sum of "kept_*" + "ir_only"
-        # if stats.tsv was produced by the same run that built labels.npz.
+        # Sanity check: labels keys should equal the sum of every "keep"
+        # category if stats.tsv was produced by the same run as labels.npz.
         if stats:
-            kept_expected = (stats.get("ir_only", 0)
-                             + stats.get("kept_single", 0)
-                             + stats.get("kept_multi", 0))
+            kept_expected = sum(stats.get(c, 0) for c in _KEEP_CATEGORIES)
             if kept_expected != len(lb):
                 row["species"] += " (!stats vs labels mismatch)"
 

@@ -1,14 +1,20 @@
 """Compare ORF-prediction gene sets against a reference annotation using gffcompare.
 
 Gene sets evaluated per species (depending on options provided):
-  orf_prediction    — <pred-dir>/<species>/prediction.gtf
-  tiberius          — tiberius_benchmarking/paper/Insecta/<species>/.../tiberius_seqlen.gtf
-  tiberius_filtered — optional, --tib-filtered-tmpl '<path>/{sp}/<file>.gtf'
-  annevo            — optional, --annevo-tmpl '<path>/{sp}/<file>.gtf'
-  merged            — (tiberius_filtered if given else tiberius) + orf_prediction
-                      via merge_annotations.py --mode full
-  merged_annevo     — merged + annevo (only when --annevo-tmpl is given)
-  braker3           — tiberius_benchmarking/paper/Insecta/<species>/.../braker3.gtf
+  orf_prediction     — <pred-dir>/<species>/prediction.gtf
+  tiberius           — tiberius_benchmarking/paper/Insecta/<species>/.../tiberius_seqlen.gtf
+  tiberius_filtered  — optional, --tib-filtered-tmpl '<path>/{sp}/<file>.gtf'
+  oriongeno          — optional, --oriongeno-tmpl '<path>/{sp}/<file>.gtf'
+  oriongeno_filtered — optional, --oriongeno-filtered-tmpl '<path>/{sp}/<file>.gtf'
+  annevo             — optional, --annevo-tmpl '<path>/{sp}/<file>.gtf' (plotted only)
+  merged             — (tiberius_filtered if given else tiberius) + orf_prediction
+                       via merge_annotations.py --mode full
+  merged_oriongeno   — oriongeno_filtered + orf_prediction
+                       (only when --oriongeno-filtered-tmpl is given)
+  merged_all         — tiberius_filtered + oriongeno_filtered + orf_prediction
+                       (only when both --tib-filtered-tmpl and
+                       --oriongeno-filtered-tmpl are given)
+  braker3            — tiberius_benchmarking/paper/Insecta/<species>/.../braker3.gtf
 
 gffcompare is called as:
   gffcompare --strict-match -e 3 -T -r <ref> -o <prefix> <query>
@@ -22,8 +28,10 @@ Usage:
   python scripts/evaluate_accuracy.py \\
       --pred-dir results/predictions/run_002_epoch41 \\
       --out-dir  results/accuracy/run_002_epoch41 \\
-      --tib-filtered-tmpl '/home/gabriell/.../filtered/{sp}/tiberius_filtered.gtf' \\
-      --annevo-tmpl       '/home/gabriell/.../annevo/{sp}/annevo.gtf'
+      --tib-filtered-tmpl       '/home/gabriell/.../filtered/{sp}/tiberius_filtered.gtf' \\
+      --oriongeno-tmpl          '/home/gabriell/.../oriongeno/{sp}/oriongeno.gtf' \\
+      --oriongeno-filtered-tmpl '/home/gabriell/.../oriongeno/{sp}/oriongeno_filtered.gtf' \\
+      --annevo-tmpl             '/home/gabriell/.../annevo/{sp}/annevo.gtf'
 """
 
 from __future__ import annotations
@@ -58,28 +66,37 @@ GENE_SETS_ALL = [
     "orf_prediction",
     "tiberius",
     "tiberius_filtered",
+    "oriongeno",
+    "oriongeno_filtered",
     "annevo",
     "merged",
-    "merged_annevo",
+    "merged_oriongeno",
+    "merged_all",
     "braker3",
 ]
 GS_LABELS = {
-    "orf_prediction":    "ORF prediction",
-    "tiberius":          "Tiberius",
-    "tiberius_filtered": "Tiberius (filtered)",
-    "annevo":            "AnnEvo",
-    "merged":            "Merged",
-    "merged_annevo":     "Merged + AnnEvo",
-    "braker3":           "BRAKER3",
+    "orf_prediction":     "ORF prediction",
+    "tiberius":           "Tiberius",
+    "tiberius_filtered":  "Tiberius (filtered)",
+    "oriongeno":          "OrionGeno",
+    "oriongeno_filtered": "OrionGeno (filtered)",
+    "annevo":             "AnnEvo",
+    "merged":             "Merged (Tib_filt + ORF)",
+    "merged_oriongeno":   "Merged (Orion_filt + ORF)",
+    "merged_all":         "Merged (Tib_filt + Orion_filt + ORF)",
+    "braker3":            "BRAKER3",
 }
 GS_MARKERS = {
-    "orf_prediction":    "o",
-    "tiberius":          "s",
-    "tiberius_filtered": "v",
-    "annevo":            "P",
-    "merged":            "^",
-    "merged_annevo":     "X",
-    "braker3":           "D",
+    "orf_prediction":     "o",
+    "tiberius":           "s",
+    "tiberius_filtered":  "v",
+    "oriongeno":          "p",
+    "oriongeno_filtered": "h",
+    "annevo":             "P",
+    "merged":             "^",
+    "merged_oriongeno":   "*",
+    "merged_all":         "X",
+    "braker3":            "D",
 }
 
 LEVELS = ["gene", "transcript", "exon"]
@@ -102,11 +119,20 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="Path template for protein-filtered Tiberius GTF, with '{sp}' for the "
                          "species name. When given, it is added as a separate gene set "
                          "'tiberius_filtered' and used in place of full Tiberius for the merge.")
+    ap.add_argument("--oriongeno-tmpl", type=str, default=None,
+                    help="Path template for OrionGeno GTF, with '{sp}' for the species name. "
+                         "When given, it is added as a separate plotted gene set 'oriongeno'.")
+    ap.add_argument("--oriongeno-filtered-tmpl", type=str, default=None,
+                    help="Path template for protein-filtered OrionGeno GTF, with '{sp}' for the "
+                         "species name. When given, it is added as a separate gene set "
+                         "'oriongeno_filtered'; an additional 'merged_oriongeno' gene set is "
+                         "built as oriongeno_filtered + orf_prediction. If "
+                         "--tib-filtered-tmpl is also given, a 'merged_all' gene set is built "
+                         "as tiberius_filtered + oriongeno_filtered + orf_prediction.")
     ap.add_argument("--annevo-tmpl", type=str, default=None,
                     help="Path template for AnnEvo GTF, with '{sp}' for the species name. "
-                         "When given, it is added as a separate gene set 'annevo' and merged "
-                         "on top of the (tiberius_filtered + orf_prediction) merge to produce "
-                         "gene set 'merged_annevo'.")
+                         "When given, it is added as a separate plotted gene set 'annevo' "
+                         "(not used in any merge).")
     return ap.parse_args(argv)
 
 
@@ -189,14 +215,22 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Species ({len(species_list)}): {species_list}", flush=True)
 
     # build active gene-set list (preserves canonical order)
-    has_tib_filt = args.tib_filtered_tmpl is not None
-    has_annevo   = args.annevo_tmpl is not None
+    has_tib_filt    = args.tib_filtered_tmpl       is not None
+    has_orion       = args.oriongeno_tmpl          is not None
+    has_orion_filt  = args.oriongeno_filtered_tmpl is not None
+    has_annevo      = args.annevo_tmpl             is not None
     drop = set()
     if not has_tib_filt:
         drop.add("tiberius_filtered")
+    if not has_orion:
+        drop.add("oriongeno")
+    if not has_orion_filt:
+        drop.add("oriongeno_filtered")
+        drop.add("merged_oriongeno")
+    if not (has_tib_filt and has_orion_filt):
+        drop.add("merged_all")
     if not has_annevo:
         drop.add("annevo")
-        drop.add("merged_annevo")
     gene_sets = [gs for gs in GENE_SETS_ALL if gs not in drop]
     print(f"Gene sets: {gene_sets}", flush=True)
 
@@ -208,8 +242,10 @@ def main(argv: list[str] | None = None) -> int:
         pred_gtf = args.pred_dir / sp / "prediction.gtf"
         tib_gtf  = Path(TIB_TMPL.format(sp=sp))
         brk_gtf  = Path(BRK_TMPL.format(sp=sp))
-        tib_filt_gtf = Path(args.tib_filtered_tmpl.format(sp=sp)) if has_tib_filt else None
-        annevo_gtf   = Path(args.annevo_tmpl.format(sp=sp))       if has_annevo   else None
+        tib_filt_gtf   = Path(args.tib_filtered_tmpl.format(sp=sp))       if has_tib_filt   else None
+        orion_gtf      = Path(args.oriongeno_tmpl.format(sp=sp))          if has_orion      else None
+        orion_filt_gtf = Path(args.oriongeno_filtered_tmpl.format(sp=sp)) if has_orion_filt else None
+        annevo_gtf     = Path(args.annevo_tmpl.format(sp=sp))             if has_annevo     else None
 
         if not ref.exists():
             print(f"  [skip] missing reference: {ref}", flush=True)
@@ -236,6 +272,18 @@ def main(argv: list[str] | None = None) -> int:
                 gene_set_gtfs["tiberius_filtered"] = tib_filt_gtf
             else:
                 print(f"  [warn] missing tiberius_filtered GTF: {tib_filt_gtf}", flush=True)
+
+        if has_orion:
+            if orion_gtf.exists():
+                gene_set_gtfs["oriongeno"] = orion_gtf
+            else:
+                print(f"  [warn] missing oriongeno GTF: {orion_gtf}", flush=True)
+
+        if has_orion_filt:
+            if orion_filt_gtf.exists():
+                gene_set_gtfs["oriongeno_filtered"] = orion_filt_gtf
+            else:
+                print(f"  [warn] missing oriongeno_filtered GTF: {orion_filt_gtf}", flush=True)
 
         if has_annevo:
             if annevo_gtf.exists():
@@ -264,23 +312,37 @@ def main(argv: list[str] | None = None) -> int:
             missing_m = [str(p) for p in (tib_merge_gtf, pred_gtf) if not p.exists()]
             print(f"  [warn] skipping merge — missing: {missing_m}", flush=True)
 
-        # build merged_annevo = merged + annevo (only if annevo and merged both available)
-        if has_annevo:
-            merged_annevo_gtf = sp_work / "merged_annevo.gtf"
-            base_merged = gene_set_gtfs.get("merged")
-            if base_merged is not None and annevo_gtf.exists():
-                print("  merging merged + annevo", flush=True)
-                if _run_merge(base_merged, annevo_gtf, merged_annevo_gtf):
-                    gene_set_gtfs["merged_annevo"] = merged_annevo_gtf
+        # build merged_oriongeno = oriongeno_filtered + orf_prediction
+        if has_orion_filt:
+            merged_orion_gtf = sp_work / "merged_oriongeno.gtf"
+            if orion_filt_gtf.exists() and pred_gtf.exists():
+                print("  merging oriongeno_filtered + orf_prediction", flush=True)
+                if _run_merge(orion_filt_gtf, pred_gtf, merged_orion_gtf):
+                    gene_set_gtfs["merged_oriongeno"] = merged_orion_gtf
                 else:
-                    print("  [warn] merged_annevo produced empty output — skipping", flush=True)
+                    print("  [warn] merged_oriongeno produced empty output — skipping", flush=True)
+            else:
+                missing_mo = [str(p) for p in (orion_filt_gtf, pred_gtf) if not p.exists()]
+                print(f"  [warn] skipping merged_oriongeno — missing: {missing_mo}", flush=True)
+
+        # build merged_all = tiberius_filtered + oriongeno_filtered + orf_prediction
+        # (implemented as merged + oriongeno_filtered, chaining merge_annotations.py)
+        if has_tib_filt and has_orion_filt:
+            merged_all_gtf = sp_work / "merged_all.gtf"
+            base_merged = gene_set_gtfs.get("merged")
+            if base_merged is not None and orion_filt_gtf.exists():
+                print("  merging merged + oriongeno_filtered", flush=True)
+                if _run_merge(base_merged, orion_filt_gtf, merged_all_gtf):
+                    gene_set_gtfs["merged_all"] = merged_all_gtf
+                else:
+                    print("  [warn] merged_all produced empty output — skipping", flush=True)
             else:
                 missing_ma = []
                 if base_merged is None:
                     missing_ma.append("merged.gtf (prior step failed)")
-                if not annevo_gtf.exists():
-                    missing_ma.append(str(annevo_gtf))
-                print(f"  [warn] skipping merged_annevo — missing: {missing_ma}", flush=True)
+                if not orion_filt_gtf.exists():
+                    missing_ma.append(str(orion_filt_gtf))
+                print(f"  [warn] skipping merged_all — missing: {missing_ma}", flush=True)
 
         # run gffcompare for each available gene set
         for gs in gene_sets:

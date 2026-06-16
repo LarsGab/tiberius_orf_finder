@@ -6,7 +6,8 @@
 #   Mammalia    : Bos / Delphinapterus / Homo
 #
 # Inputs:  genomes published by `submit_vertebrates_test.sh` at
-#          ${RESULTS_DIR}/<Genus_species>/assembly/genome.fa
+#          ${RESULTS_DIR}/<Genus_species>/assembly/genome.fa[.gz]
+#          (.gz is decompressed into $SLURM_TMPDIR for ANNEVO)
 # Outputs: ${RESULTS_DIR}/<Genus_species>/annevo/annevo.gff
 #
 # Usage:  sbatch scripts/slurm_annevo_vertebrates_test.sh
@@ -47,12 +48,13 @@ entry=${JOBS[$SLURM_ARRAY_TASK_ID]}
 species=${entry%:*}
 lineage=${entry#*:}
 
-GENOME=${RESULTS_DIR}/${species}/assembly/genome.fa
+source "$(dirname "$0")/_stage_genome.sh"
+trap 'stage_genome_cleanup' EXIT
+GENOME=$(stage_genome "${RESULTS_DIR}/${species}/assembly")
 MODEL=${MODEL_DIR}/ANNEVO_${lineage}.pt
 OUTDIR=${RESULTS_DIR}/${species}/annevo
 OUTGFF=${OUTDIR}/annevo.gff
 
-test -s "${GENOME}" || { echo "missing genome: ${GENOME}" >&2; exit 2; }
 test -s "${MODEL}"  || { echo "missing model: ${MODEL}"   >&2; exit 2; }
 mkdir -p "${OUTDIR}"
 

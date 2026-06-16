@@ -7,7 +7,8 @@
 #   mammals           : Bos / Delphinapterus / Homo
 #
 # Inputs:  genomes published by `submit_vertebrates_test.sh` at
-#          ${RESULTS_DIR}/<Genus_species>/assembly/genome.fa
+#          ${RESULTS_DIR}/<Genus_species>/assembly/genome.fa[.gz]
+#          (.gz is decompressed into $SLURM_TMPDIR for OrionGeno)
 # Outputs: ${RESULTS_DIR}/<Genus_species>/oriongeno/oriongeno.gtf
 #
 # Usage:  sbatch scripts/slurm_oriongeno_vertebrates_test.sh
@@ -48,12 +49,13 @@ entry=${JOBS[$SLURM_ARRAY_TASK_ID]}
 species=${entry%:*}
 model=${entry#*:}
 
-GENOME=${RESULTS_DIR}/${species}/assembly/genome.fa
+source "$(dirname "$0")/_stage_genome.sh"
+trap 'stage_genome_cleanup' EXIT
+GENOME=$(stage_genome "${RESULTS_DIR}/${species}/assembly")
 CHECKPOINT=${CHECKPOINT_DIR}/${model}
 OUTDIR=${RESULTS_DIR}/${species}/oriongeno
 OUTGTF=${OUTDIR}/oriongeno.gtf
 
-test -s "${GENOME}"      || { echo "missing genome: ${GENOME}"        >&2; exit 2; }
 test -e "${CHECKPOINT}"  || { echo "missing checkpoint: ${CHECKPOINT}" >&2; exit 2; }
 mkdir -p "${OUTDIR}"
 

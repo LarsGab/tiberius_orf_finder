@@ -25,7 +25,9 @@
 
 process VARUS_RUNLIST_LR {
     tag { species }
-    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/varus" }, mode: 'copy', overwrite: true
+    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/varus" },
+        mode: 'copy', overwrite: true,
+        pattern: "Runlist.tsv"
     cpus 1
 
     input:
@@ -63,7 +65,6 @@ process VARUS_RUNLIST_LR {
 
 process VARUS_INDEX_LR {
     tag { species }
-    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/varus" }, mode: 'copy', overwrite: true
     cpus { params.varus_index_cpus ?: 8 }
 
     input:
@@ -98,7 +99,9 @@ process VARUS_INDEX_LR {
 
 process VARUS_RUN_LR {
     tag { species }
-    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/varus" }, mode: 'copy', overwrite: true
+    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/varus" },
+        mode: 'copy', overwrite: true,
+        pattern: "{VARUS.bam,Coverage.csv,RunStatistics.csv,runtime.varus.txt}"
     cpus params.threads
 
     input:

@@ -8,14 +8,15 @@ and re-VARUS'd from scratch.
 
 Layout assumed (matches nextflow/main.nf publishDir conventions)::
 
-    <outdir>/<Genus_species>/assembly/genome.fa
+    <outdir>/<Genus_species>/assembly/genome.fa[.gz]
     <outdir>/<Genus_species>/assembly/annotation.gff
     <outdir>/<Genus_species>/varus/VARUS.bam
 
 What is checked, per species:
 
-  genome.fa
-    - exists, size > 0
+  genome.fa[.gz]
+    - exists, size > 0  (either genome.fa or genome.fa.gz is accepted;
+      gzipped form is read transparently via Python's gzip module)
     - first non-blank line starts with '>'
     - number of contigs and total residue length
 
@@ -61,11 +62,31 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
+import io
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+def _open_text(path: Path) -> io.TextIOBase:
+    """Open ``path`` for text reading, transparently decompressing .gz."""
+    if path.suffix == ".gz":
+        return gzip.open(path, "rt", encoding="utf-8", errors="replace")
+    return path.open("r", encoding="utf-8", errors="replace")
+
+
+def _resolve_genome(assembly_dir: Path) -> Path | None:
+    """Return whichever of genome.fa / genome.fa.gz exists (plain preferred)."""
+    plain = assembly_dir / "genome.fa"
+    gz    = assembly_dir / "genome.fa.gz"
+    if plain.exists():
+        return plain
+    if gz.exists():
+        return gz
+    return None
 
 
 # ---------------------------------------------------------------- helpers
@@ -119,8 +140,8 @@ class SpeciesReport:
         return "bad"
 
 
-def _check_fasta(path: Path, rep: SpeciesReport) -> None:
-    if not path.exists():
+def _check_fasta(path: Path | None, rep: SpeciesReport) -> None:
+    if path is None or not path.exists():
         rep.genome_status = "missing"
         return
     rep.genome_bytes = path.stat().st_size
@@ -131,7 +152,7 @@ def _check_fasta(path: Path, rep: SpeciesReport) -> None:
     residues = 0
     first_nonblank_checked = False
     try:
-        with path.open("r", encoding="utf-8", errors="replace") as fh:
+        with _open_text(path) as fh:
             for line in fh:
                 if not line.strip():
                     continue
@@ -144,7 +165,7 @@ def _check_fasta(path: Path, rep: SpeciesReport) -> None:
                     contigs += 1
                 else:
                     residues += len(line.strip())
-    except OSError as e:
+    except (OSError, gzip.BadGzipFile) as e:
         rep.genome_status = "unreadable"
         rep.notes.append(f"genome read error: {e}")
         return
@@ -383,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
             reports.append(rep)
             print(f"  [miss] {sp}: no dir", flush=True)
             continue
-        _check_fasta(d / "assembly" / "genome.fa", rep)
+        _check_fasta(_resolve_genome(d / "assembly"), rep)
         _check_gff(d / "assembly" / "annotation.gff", rep)
         _check_bam(
             d / "varus" / "VARUS.bam", rep, samtools,

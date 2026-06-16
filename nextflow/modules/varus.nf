@@ -5,7 +5,9 @@
 
 process MAKE_VARUS_PARAMS {
     tag { species }
-    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/varus" }, mode: 'copy', overwrite: true
+    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/varus" },
+        mode: 'copy', overwrite: true,
+        pattern: "VARUSparameters.txt"
     cpus 1
 
     input:
@@ -57,7 +59,9 @@ EOF
 
 process RUN_VARUS {
     tag { species }
-    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/varus" }, mode: 'copy', overwrite: true
+    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/varus" },
+        mode: 'copy', overwrite: true,
+        pattern: "{VARUS.bam,runtime.varus.txt}"
     cpus params.threads
 
     input:

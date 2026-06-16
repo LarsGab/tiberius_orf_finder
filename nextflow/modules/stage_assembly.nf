@@ -13,7 +13,9 @@
 
 process STAGE_ASSEMBLY {
     tag { species }
-    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/assembly" }, mode: 'copy', overwrite: true
+    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/assembly" },
+        mode: 'copy', overwrite: true,
+        pattern: "{genome.fa.gz,annotation.gff}"
     cpus 1
 
     input:
@@ -25,6 +27,7 @@ process STAGE_ASSEMBLY {
               val(annotation),
               path("genome.fa"),
               path("annotation.gff"), emit: assembly
+        path "genome.fa.gz", emit: assembly_gz
 
     script:
     def underscored = species.replaceAll(' ', '_')
@@ -38,37 +41,41 @@ process STAGE_ASSEMBLY {
         echo "[stage] reusing assembly from \$reuse"
         cp "\$reuse/genome.fa"      genome.fa
         cp "\$reuse/annotation.gff" annotation.gff
-        exit 0
+    elif [[ -s "\$reuse/genome.fa.gz" && -s "\$reuse/annotation.gff" ]]; then
+        echo "[stage] reusing gzipped assembly from \$reuse"
+        gunzip -c "\$reuse/genome.fa.gz" > genome.fa
+        cp "\$reuse/annotation.gff" annotation.gff
+    else
+        # 2) Fallback: same as modules/fetch.nf
+        case "${annotation}" in
+            RefSeq)
+                echo "[stage] no reuse copy; downloading RefSeq ${accession}"
+                datasets download genome accession ${accession} \\
+                    --include genome,gff3 \\
+                    --filename ncbi.zip
+                unzip -o -q ncbi.zip -d ncbi
+                cat ncbi/ncbi_dataset/data/${accession}/*_genomic.fna > genome.fa
+                cp  ncbi/ncbi_dataset/data/${accession}/genomic.gff annotation.gff
+                ;;
+            BRAKER)
+                echo "[stage] no reuse copy; staging BRAKER ${underscored}"
+                test -n "${brakerDir}" || { echo "missing --braker_data_dir" >&2; exit 2; }
+                src="${brakerDir}/${underscored}"
+                test -d "\$src" || { echo "missing BRAKER dir: \$src" >&2; exit 2; }
+                cp "\$src/${underscored}_renamed.fna"      genome.fa
+                cp "\$src/${underscored}_cds_longest.gtf"  annotation.gff
+                ;;
+            *)
+                echo "unknown annotation source: ${annotation}" >&2
+                exit 2
+                ;;
+        esac
     fi
-
-    # 2) Fallback: same as modules/fetch.nf
-    case "${annotation}" in
-        RefSeq)
-            echo "[stage] no reuse copy; downloading RefSeq ${accession}"
-            datasets download genome accession ${accession} \\
-                --include genome,gff3 \\
-                --filename ncbi.zip
-            unzip -o -q ncbi.zip -d ncbi
-            cat ncbi/ncbi_dataset/data/${accession}/*_genomic.fna > genome.fa
-            cp  ncbi/ncbi_dataset/data/${accession}/genomic.gff annotation.gff
-            ;;
-        BRAKER)
-            echo "[stage] no reuse copy; staging BRAKER ${underscored}"
-            test -n "${brakerDir}" || { echo "missing --braker_data_dir" >&2; exit 2; }
-            src="${brakerDir}/${underscored}"
-            test -d "\$src" || { echo "missing BRAKER dir: \$src" >&2; exit 2; }
-            cp "\$src/${underscored}_renamed.fna"      genome.fa
-            cp "\$src/${underscored}_cds_longest.gtf"  annotation.gff
-            ;;
-        *)
-            echo "unknown annotation source: ${annotation}" >&2
-            exit 2
-            ;;
-    esac
+    gzip -kf genome.fa
     """
 
     stub:
     """
-    touch genome.fa annotation.gff
+    touch genome.fa annotation.gff genome.fa.gz
     """
 }

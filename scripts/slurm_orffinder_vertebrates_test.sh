@@ -9,7 +9,8 @@
 # re-launched later for the stragglers.
 #
 # Inputs:  ${RESULTS_DIR}/<Genus_species>/stringtie/stringtie.gtf
-#          ${RESULTS_DIR}/<Genus_species>/assembly/genome.fa
+#          ${RESULTS_DIR}/<Genus_species>/assembly/genome.fa[.gz]
+#          (.gz is decompressed into $SLURM_TMPDIR for gffread)
 # Outputs: ${RESULTS_DIR}/<Genus_species>/orffinder/orffinder.gtf
 #
 # Usage:  sbatch scripts/slurm_orffinder_vertebrates_test.sh
@@ -49,18 +50,23 @@ declare -a SPECIES=(
 
 species=${SPECIES[$SLURM_ARRAY_TASK_ID]}
 
-GENOME=${RESULTS_DIR}/${species}/assembly/genome.fa
+ASSEMBLY_DIR=${RESULTS_DIR}/${species}/assembly
 STRINGTIE=${RESULTS_DIR}/${species}/stringtie/stringtie.gtf
 OUTDIR=${RESULTS_DIR}/${species}/orffinder
 OUTGTF=${OUTDIR}/orffinder.gtf
 
 # Skip-not-fail: data-prep may still be running for this species.
-if [[ ! -s "${STRINGTIE}" || ! -s "${GENOME}" ]]; then
+if [[ ! -s "${STRINGTIE}" \
+      || ( ! -s "${ASSEMBLY_DIR}/genome.fa" && ! -s "${ASSEMBLY_DIR}/genome.fa.gz" ) ]]; then
     echo "[$(date -Iseconds)] SKIP ${species}: stringtie or genome not ready"
     echo "                       stringtie=${STRINGTIE}"
-    echo "                       genome=${GENOME}"
+    echo "                       assembly_dir=${ASSEMBLY_DIR}"
     exit 0
 fi
+
+source "$(dirname "$0")/_stage_genome.sh"
+trap 'stage_genome_cleanup' EXIT
+GENOME=$(stage_genome "${ASSEMBLY_DIR}")
 
 test -s "${WEIGHTS}" || { echo "missing weights: ${WEIGHTS}" >&2; exit 2; }
 test -s "${CONFIG}"  || { echo "missing config: ${CONFIG}"   >&2; exit 2; }

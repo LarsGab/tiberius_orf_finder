@@ -21,7 +21,9 @@
 
 process FETCH_ASSEMBLY {
     tag { species }
-    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/assembly" }, mode: 'copy', overwrite: true
+    publishDir { "${params.outdir}/${species.replaceAll(' ', '_')}/assembly" },
+        mode: 'copy', overwrite: true,
+        pattern: "{genome.fa.gz,annotation.gff}"
 
     cpus 1
 
@@ -34,6 +36,7 @@ process FETCH_ASSEMBLY {
               val(annotation),
               path("genome.fa"),
               path("annotation.gff"), emit: assembly
+        path "genome.fa.gz", emit: assembly_gz
 
     script:
     def underscored = species.replaceAll(' ', '_')
@@ -47,6 +50,7 @@ process FETCH_ASSEMBLY {
     unzip -o -q ncbi.zip -d ncbi
     cat ncbi/ncbi_dataset/data/${accession}/*_genomic.fna > genome.fa
     cp ncbi/ncbi_dataset/data/${accession}/genomic.gff annotation.gff
+    gzip -kf genome.fa
     """
     else if (annotation == 'BRAKER')
     """
@@ -69,6 +73,7 @@ process FETCH_ASSEMBLY {
         echo "BRAKER source dir \$src has neither {genome.fa,annotation.gff} nor legacy ${underscored}_renamed.fna/_cds_longest.gtf" >&2
         exit 2
     fi
+    gzip -kf genome.fa
     """
     else if (annotation == 'Phytozome')
     """
@@ -78,6 +83,7 @@ process FETCH_ASSEMBLY {
     # symlinks (created by stage_mesangiospermae_figshare.py) are followed
     cp -L "\$src/genome.fa"      genome.fa
     cp -L "\$src/annotation.gff" annotation.gff
+    gzip -kf genome.fa
     """
     else
     """
@@ -87,6 +93,6 @@ process FETCH_ASSEMBLY {
 
     stub:
     """
-    touch genome.fa annotation.gff
+    touch genome.fa annotation.gff genome.fa.gz
     """
 }

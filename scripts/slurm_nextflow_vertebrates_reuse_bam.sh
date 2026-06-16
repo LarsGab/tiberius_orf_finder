@@ -31,7 +31,7 @@ PROJDIR=/home/gabriell/tiberius_orf_finder
 SPECIES_CSV=${PROJDIR}/results/integrity_checks/split_vertebrates/reuse_bam.csv
 
 # >>> CONFIRM: read-only pre-crash results dir under /home_old <<<
-OLD_OUTDIR=/home_old/gabriell/tiberius_orf_finder/results/training_vertebrates
+OLD_OUTDIR=/home_old/gabriell/tiberius_orf_finder/results_vertebrates/training/
 
 # Fresh writable run dir. Use _v2 (or a date) to keep the salvaged run
 # distinct from any future re-run.

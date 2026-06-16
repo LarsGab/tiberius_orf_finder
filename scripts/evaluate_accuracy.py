@@ -55,10 +55,10 @@ from matplotlib.patches import Patch
 # ---------------------------------------------------------------------------
 _BENCH = Path("/home/gabriell/tiberius_benchmarking")
 
-REF_TMPL        = str(_BENCH / "Insecta/{sp}/annot_cds.gff")
-TIB_TMPL        = str(_BENCH / "paper/Insecta/{sp}/results/predictions/tiberius/tiberius_seqlen.gtf")
-BRK_TMPL        = str(_BENCH / "paper/Insecta/{sp}/results/predictions/braker3/braker3.gtf")
-MERGE_SCRIPT    = Path("/home/gabriell/tib_hidten/Tiberius/tiberius/scripts/merge_annotations.py")
+REF_TMPL        = "/home/gabriell/tiberius_orf_finder/results/vertebrates_test/{sp}/assembly/annot_cds.gff"
+TIB_TMPL        = str(_BENCH / "paper/Vertebrata/{sp}/results/predictions/tiberius/tiberius_seqlen.gtf")
+BRK_TMPL        = str(_BENCH / "paper/Vertebrata/{sp}/results/predictions/braker3/braker3.gtf")
+MERGE_SCRIPT    = Path("/home/gabriell//Tiberius/tiberius/scripts/merge_annotations.py")
 
 # Full ordered list of possible gene sets. The runtime subset is built in main()
 # based on which CLI options were provided.
@@ -80,7 +80,7 @@ GS_LABELS = {
     "tiberius_filtered":  "Tiberius (filtered)",
     "oriongeno":          "OrionGeno",
     "oriongeno_filtered": "OrionGeno (filtered)",
-    "annevo":             "AnnEvo",
+    "annevo":             "ANNEVO",
     "merged":             "Merged (Tib_filt + ORF)",
     "merged_oriongeno":   "Merged (Orion_filt + ORF)",
     "merged_all":         "Merged (Tib_filt + Orion_filt + ORF)",
@@ -99,7 +99,7 @@ GS_MARKERS = {
     "braker3":            "D",
 }
 
-LEVELS = ["gene", "transcript", "exon"]
+LEVELS = ["gene", "transcript"]
 LEVEL_LABELS = {"gene": "Gene", "transcript": "Transcript", "exon": "Exon"}
 LEVEL_COLORS = {"gene": "#e41a1c", "transcript": "#377eb8", "exon": "#4daf4a"}
 
@@ -171,9 +171,11 @@ def _run_merge(tib_gtf: Path, pred_gtf: Path, out_gtf: Path) -> bool:
 # gffcompare
 # ---------------------------------------------------------------------------
 def _run_gffcompare(ref: Path, query: Path, prefix: Path) -> Path:
+    cmd = f"grep CDS {str(query)} > {str(prefix)}_cds"
+    subprocess.run(cmd, shell=True)
     cmd = [
         "gffcompare", "--strict-match", "-e", "3", "-T",
-        "-r", str(ref), "-o", str(prefix), str(query),
+        "-r", str(ref), "-o", str(prefix), str(prefix) + "_cds",
     ]
     subprocess.run(cmd, check=True, capture_output=True)
     return Path(str(prefix) + ".stats")
@@ -327,7 +329,7 @@ def main(argv: list[str] | None = None) -> int:
 
         # build merged_all = tiberius_filtered + oriongeno_filtered + orf_prediction
         # (implemented as merged + oriongeno_filtered, chaining merge_annotations.py)
-        if has_tib_filt and has_orion_filt:
+        if False and has_tib_filt and has_orion_filt:
             merged_all_gtf = sp_work / "merged_all.gtf"
             base_merged = gene_set_gtfs.get("merged")
             if base_merged is not None and orion_filt_gtf.exists():

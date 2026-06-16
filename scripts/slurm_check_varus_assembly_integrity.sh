@@ -29,7 +29,7 @@ PROJDIR=/home/gabriell/tiberius_orf_finder
 #   <OLD_OUTDIR>/<Genus_species>/assembly/genome.fa
 #   <OLD_OUTDIR>/<Genus_species>/assembly/annotation.gff
 #   <OLD_OUTDIR>/<Genus_species>/varus/VARUS.bam
-OLD_OUTDIR=/home_old/gabriell/tiberius_orf_finder/results/training_vertebrates
+OLD_OUTDIR=/home_old/gabriell/tiberius_orf_finder/results_vertebrates/training/
 
 # Restrict the check to the species we plan to retrain on. Leave empty
 # to scan every subdirectory of OLD_OUTDIR.

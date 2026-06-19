@@ -17,12 +17,12 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=8G
 #SBATCH --time=72:00:00
-#SBATCH --output=/home/gabriell/tiberius_orf_finder/logs/nf_scratch_vert_%j.out
-#SBATCH --error=/home/gabriell/tiberius_orf_finder/logs/nf_scratch_vert_%j.err
+#SBATCH --output=/projects/AI-GUSTUS/tiberius_orf_finder/logs/nf_scratch_vert_%j.out
+#SBATCH --error=/projects/AI-GUSTUS/tiberius_orf_finder/logs/nf_scratch_vert_%j.err
 
 set -euo pipefail
 
-PROJDIR=/home/gabriell/tiberius_orf_finder
+PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 
 SPECIES_CSV=${PROJDIR}/results/integrity_checks/split_vertebrates/from_scratch.csv
 

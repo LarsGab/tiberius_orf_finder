@@ -26,8 +26,8 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=8G
 #SBATCH --time=24:00:00
-#SBATCH --output=/home/gabriell/tiberius_orf_finder/logs/varus_integrity_%j.out
-#SBATCH --error=/home/gabriell/tiberius_orf_finder/logs/varus_integrity_%j.err
+#SBATCH --output=/projects/AI-GUSTUS/tiberius_orf_finder/logs/varus_integrity_%j.out
+#SBATCH --error=/projects/AI-GUSTUS/tiberius_orf_finder/logs/varus_integrity_%j.err
 
 set -euo pipefail
 
@@ -36,7 +36,7 @@ set -euo pipefail
 SPLIT=${SPLIT:-training}
 : "${OLD_OUTDIR:?must set OLD_OUTDIR (read-only /home_old path with <Genus_species>/{assembly,varus} subdirs)}"
 
-PROJDIR=/home/gabriell/tiberius_orf_finder
+PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 
 SPECIES_CSV=${PROJDIR}/nextflow/conf/${CLADE}/species_${SPLIT}.csv
 

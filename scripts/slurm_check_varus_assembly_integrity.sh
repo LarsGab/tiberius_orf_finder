@@ -13,16 +13,16 @@
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=8G
 #SBATCH --time=24:00:00
-#SBATCH --output=/home/gabriell/tiberius_orf_finder/logs/varus_integrity_%j.out
-#SBATCH --error=/home/gabriell/tiberius_orf_finder/logs/varus_integrity_%j.err
+#SBATCH --output=/projects/AI-GUSTUS/tiberius_orf_finder/logs/varus_integrity_%j.out
+#SBATCH --error=/projects/AI-GUSTUS/tiberius_orf_finder/logs/varus_integrity_%j.err
 
 set -euo pipefail
 
 # ---------------------------------------------------------------- paths
-# Code + outputs live under writable $HOME. Data being checked is
-# strictly read-only under /home_old.
+# Code + outputs live under /projects/AI-GUSTUS (writable). Data being
+# checked is strictly read-only under /home_old.
 
-PROJDIR=/home/gabriell/tiberius_orf_finder
+PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 
 # >>> EDIT THIS to point at the actual old training results dir <<<
 # Expected layout under OLD_OUTDIR:

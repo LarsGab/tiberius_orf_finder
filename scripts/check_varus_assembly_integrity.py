@@ -53,7 +53,7 @@ on PATH).
 Example::
 
     micromamba run -n orffinder python scripts/check_varus_assembly_integrity.py \\
-        --outdir /home/gabriell/tiberius_orf_finder/results/training_vertebrates \\
+        --outdir /projects/AI-GUSTUS/tiberius_orf_finder/results/training_vertebrates \\
         --species-csv nextflow/conf/vertebrates/species_training.csv \\
         --out-tsv     results/training_vertebrates/integrity_check.tsv
 """

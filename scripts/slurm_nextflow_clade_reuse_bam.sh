@@ -72,7 +72,7 @@ case "${CLADE}" in
     diatoms)
         EXTRA_NF_ARGS+=(--braker_data_dir /projects/AI-GUSTUS/tiberius_diatoms_staged/by_species) ;;
     embryophyta)
-        EXTRA_NF_ARGS+=(--phytozome_data_dir /home_old/gabriell/tiberius_mesangiospermae_training_data/by_species) ;;
+        EXTRA_NF_ARGS+=(--phytozome_data_dir /projects/AI-GUSTUS/tiberius_embryophyta_staged/by_species) ;;
 esac
 
 cd "${RUNDIR}"

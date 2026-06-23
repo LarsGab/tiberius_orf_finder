@@ -41,7 +41,13 @@ PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 SPLIT_DIR=${PROJDIR}/results/integrity_checks/split_${CLADE}_${SPLIT}
 SPECIES_CSV=${SPLIT_DIR}/reuse_bam.csv
 
-OUTDIR=${PROJDIR}/results/training_${CLADE}_v2
+# Keep the bare ${CLADE}_v2 name for the training split (already used by
+# downstream training scripts); suffix non-training splits so val/test
+# don't collide with training in the same outdir.
+case "${SPLIT}" in
+    training) OUTDIR=${PROJDIR}/results/training_${CLADE}_v2 ;;
+    *)        OUTDIR=${PROJDIR}/results/training_${CLADE}_${SPLIT}_v2 ;;
+esac
 RUNDIR=${OUTDIR}/_nf_run
 
 NF_CONF=${PROJDIR}/nextflow/conf/brain_shortread_v2.config

@@ -1,0 +1,256 @@
+================================================================
+Species: Gallus_gallus    Variant: ir_start_p80
+================================================================
+
+--- filter_subsequence_predictions ---
+[filter_subsequence_predictions] input tx       : 32212
+[filter_subsequence_predictions] dropped tx     : 9244 (28.7%)
+[filter_subsequence_predictions] kept tx        : 22968
+[filter_subsequence_predictions] CDS kept/drop  : 261813 / 85158
+[filter_subsequence_predictions] out gtf        : /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Gallus_gallus/eval_ir_start_p80/orfs.filtered.gtf
+[filter_subsequence_predictions] report tsv     : /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Gallus_gallus/eval_ir_start_p80/dropped_subsequences.tsv
+
+--- quantify_start_truncation ---
+[quantify_start_truncation] parsing inputs ...
+[quantify_start_truncation] st_tx=48737 refs=68453 pred_tx=32212
+
+[quantify_start_truncation] eligible cases (ref ATG within 3 bp of tx start): 182
+         correct :     51  ( 28.0%)
+      late_start :     75  ( 41.2%)
+     early_start :      0  (  0.0%)
+   no_prediction :     56  ( 30.8%)
+
+[quantify_start_truncation] breakdown by ref ATG tx position:
+  ref_pos   total  correct   late  early  no_pred
+        0      81        1     38      0       42
+        1      28       18      4      0        6
+        2      20       15      3      0        2
+        3      53       17     30      0        6
+
+[quantify_start_truncation] detail tsv -> /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Gallus_gallus/eval_ir_start_p80/start_truncation.tsv
+
+--- quantify_stringtie_gene_split ---
+[quantify_stringtie_gene_split] parsing inputs ...
+[quantify_stringtie_gene_split] ref protein-coding genes : 18016
+[quantify_stringtie_gene_split] stringtie loci           : 26003
+
+[quantify_stringtie_gene_split] ref protein-coding genes: 18016
+  n_loci   n_genes   pct
+       0      2017   11.2%
+       1     13712   76.1%
+       2      1722    9.6%
+       3       308    1.7%
+       4       120    0.7%
+       5        48    0.3%
+       6        32    0.2%
+       7        15    0.1%
+       8        11    0.1%
+       9        11    0.1%
+      10         4    0.0%
+      11         5    0.0%
+      12         1    0.0%
+      13         3    0.0%
+      14         1    0.0%
+      16         2    0.0%
+      17         1    0.0%
+      19         1    0.0%
+      20         1    0.0%
+      29         1    0.0%
+
+  no st locus  :   2017  ( 11.2%)
+  one st locus :  13712  ( 76.1%)
+  split (>=2)  :   2287  ( 12.7%)
+
+[quantify_stringtie_gene_split] detail tsv -> /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Gallus_gallus/eval_ir_start_p80/stringtie_gene_split.tsv
+
+================================================================
+Species: Pristiophorus_japonicus    Variant: ir_start_p80
+================================================================
+
+--- filter_subsequence_predictions ---
+[filter_subsequence_predictions] input tx       : 36048
+[filter_subsequence_predictions] dropped tx     : 9096 (25.2%)
+[filter_subsequence_predictions] kept tx        : 26952
+[filter_subsequence_predictions] CDS kept/drop  : 266037 / 70253
+[filter_subsequence_predictions] out gtf        : /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Pristiophorus_japonicus/eval_ir_start_p80/orfs.filtered.gtf
+[filter_subsequence_predictions] report tsv     : /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Pristiophorus_japonicus/eval_ir_start_p80/dropped_subsequences.tsv
+
+--- quantify_start_truncation ---
+[quantify_start_truncation] parsing inputs ...
+[quantify_start_truncation] st_tx=71365 refs=45258 pred_tx=36048
+
+[quantify_start_truncation] eligible cases (ref ATG within 3 bp of tx start): 467
+         correct :    191  ( 40.9%)
+      late_start :     99  ( 21.2%)
+     early_start :      0  (  0.0%)
+   no_prediction :    177  ( 37.9%)
+
+[quantify_start_truncation] breakdown by ref ATG tx position:
+  ref_pos   total  correct   late  early  no_pred
+        0      81        0     23      0       58
+        1     133       58     28      0       47
+        2      97       41     16      0       40
+        3     156       92     32      0       32
+
+[quantify_start_truncation] detail tsv -> /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Pristiophorus_japonicus/eval_ir_start_p80/start_truncation.tsv
+
+--- quantify_stringtie_gene_split ---
+[quantify_stringtie_gene_split] parsing inputs ...
+[quantify_stringtie_gene_split] ref protein-coding genes : 22273
+[quantify_stringtie_gene_split] stringtie loci           : 40702
+
+[quantify_stringtie_gene_split] ref protein-coding genes: 22273
+  n_loci   n_genes   pct
+       0      5064   22.7%
+       1     14026   63.0%
+       2      2150    9.7%
+       3       572    2.6%
+       4       218    1.0%
+       5       103    0.5%
+       6        57    0.3%
+       7        26    0.1%
+       8        22    0.1%
+       9        10    0.0%
+      10         7    0.0%
+      11         6    0.0%
+      12         4    0.0%
+      14         4    0.0%
+      16         1    0.0%
+      19         1    0.0%
+      20         2    0.0%
+
+  no st locus  :   5064  ( 22.7%)
+  one st locus :  14026  ( 63.0%)
+  split (>=2)  :   3183  ( 14.3%)
+
+[quantify_stringtie_gene_split] detail tsv -> /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Pristiophorus_japonicus/eval_ir_start_p80/stringtie_gene_split.tsv
+
+================================================================
+Species: Bos_taurus    Variant: ir_start_p80
+================================================================
+
+--- filter_subsequence_predictions ---
+[filter_subsequence_predictions] input tx       : 40989
+[filter_subsequence_predictions] dropped tx     : 11940 (29.1%)
+[filter_subsequence_predictions] kept tx        : 29049
+[filter_subsequence_predictions] CDS kept/drop  : 305633 / 95693
+[filter_subsequence_predictions] out gtf        : /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Bos_taurus/eval_ir_start_p80/orfs.filtered.gtf
+[filter_subsequence_predictions] report tsv     : /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Bos_taurus/eval_ir_start_p80/dropped_subsequences.tsv
+
+--- quantify_start_truncation ---
+[quantify_start_truncation] parsing inputs ...
+[quantify_start_truncation] st_tx=64856 refs=64900 pred_tx=40989
+
+[quantify_start_truncation] eligible cases (ref ATG within 3 bp of tx start): 271
+         correct :    149  ( 55.0%)
+      late_start :     79  ( 29.2%)
+     early_start :      0  (  0.0%)
+   no_prediction :     43  ( 15.9%)
+
+[quantify_start_truncation] breakdown by ref ATG tx position:
+  ref_pos   total  correct   late  early  no_pred
+        0      30        0      7      0       23
+        1      33       25      3      0        5
+        2      69       59      5      0        5
+        3     139       65     64      0       10
+
+[quantify_start_truncation] detail tsv -> /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Bos_taurus/eval_ir_start_p80/start_truncation.tsv
+
+--- quantify_stringtie_gene_split ---
+[quantify_stringtie_gene_split] parsing inputs ...
+[quantify_stringtie_gene_split] ref protein-coding genes : 21695
+[quantify_stringtie_gene_split] stringtie loci           : 34274
+
+[quantify_stringtie_gene_split] ref protein-coding genes: 21695
+  n_loci   n_genes   pct
+       0      3629   16.7%
+       1     15963   73.6%
+       2      1442    6.6%
+       3       368    1.7%
+       4       133    0.6%
+       5        73    0.3%
+       6        30    0.1%
+       7        18    0.1%
+       8        13    0.1%
+       9         5    0.0%
+      10         5    0.0%
+      11         4    0.0%
+      12         3    0.0%
+      13         2    0.0%
+      14         1    0.0%
+      15         1    0.0%
+      16         1    0.0%
+      17         2    0.0%
+      24         1    0.0%
+      47         1    0.0%
+
+  no st locus  :   3629  ( 16.7%)
+  one st locus :  15963  ( 73.6%)
+  split (>=2)  :   2103  (  9.7%)
+
+[quantify_stringtie_gene_split] detail tsv -> /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Bos_taurus/eval_ir_start_p80/stringtie_gene_split.tsv
+
+================================================================
+Species: Delphinapterus_leucas    Variant: ir_start_p80
+================================================================
+
+--- filter_subsequence_predictions ---
+[filter_subsequence_predictions] input tx       : 26032
+[filter_subsequence_predictions] dropped tx     : 6994 (26.9%)
+[filter_subsequence_predictions] kept tx        : 19038
+[filter_subsequence_predictions] CDS kept/drop  : 187236 / 52040
+[filter_subsequence_predictions] out gtf        : /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Delphinapterus_leucas/eval_ir_start_p80/orfs.filtered.gtf
+[filter_subsequence_predictions] report tsv     : /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Delphinapterus_leucas/eval_ir_start_p80/dropped_subsequences.tsv
+
+--- quantify_start_truncation ---
+[quantify_start_truncation] parsing inputs ...
+[quantify_start_truncation] st_tx=42219 refs=50540 pred_tx=26032
+
+[quantify_start_truncation] eligible cases (ref ATG within 3 bp of tx start): 382
+         correct :    191  ( 50.0%)
+      late_start :     60  ( 15.7%)
+     early_start :      0  (  0.0%)
+   no_prediction :    131  ( 34.3%)
+
+[quantify_start_truncation] breakdown by ref ATG tx position:
+  ref_pos   total  correct   late  early  no_pred
+        0     113        0     24      0       89
+        1     117       84     17      0       16
+        2      47       32      6      0        9
+        3     105       75     13      0       17
+
+[quantify_start_truncation] detail tsv -> /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Delphinapterus_leucas/eval_ir_start_p80/start_truncation.tsv
+
+--- quantify_stringtie_gene_split ---
+[quantify_stringtie_gene_split] parsing inputs ...
+[quantify_stringtie_gene_split] ref protein-coding genes : 18469
+[quantify_stringtie_gene_split] stringtie loci           : 23238
+
+[quantify_stringtie_gene_split] ref protein-coding genes: 18469
+  n_loci   n_genes   pct
+       0      4440   24.0%
+       1     11609   62.9%
+       2      1504    8.1%
+       3       489    2.6%
+       4       229    1.2%
+       5        92    0.5%
+       6        48    0.3%
+       7        20    0.1%
+       8         9    0.0%
+       9         9    0.0%
+      10         2    0.0%
+      11         4    0.0%
+      12         6    0.0%
+      13         2    0.0%
+      14         1    0.0%
+      15         1    0.0%
+      16         1    0.0%
+      17         2    0.0%
+      22         1    0.0%
+
+  no st locus  :   4440  ( 24.0%)
+  one st locus :  11609  ( 62.9%)
+  split (>=2)  :   2420  ( 13.1%)
+
+[quantify_stringtie_gene_split] detail tsv -> /projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/Delphinapterus_leucas/eval_ir_start_p80/stringtie_gene_split.tsv
+

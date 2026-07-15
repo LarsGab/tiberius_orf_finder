@@ -36,6 +36,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="Override batch_size from config.")
     ap.add_argument("--lr", type=float, default=None,
                     help="Override learning_rate from config.")
+    ap.add_argument("--init-weights", type=Path, default=None,
+                    help="Load these weights before training (resume).")
+    ap.add_argument("--initial-epoch", type=int, default=0,
+                    help="Epoch index to start numbering at (for resume).")
     return ap.parse_args(argv)
 
 
@@ -190,12 +194,17 @@ def main(argv: list[str] | None = None) -> int:
         metrics=[MaskedAccuracy(name="accuracy")] + all_class_f1_metrics(),
     )
 
+    if args.init_weights is not None:
+        print(f"loading weights from {args.init_weights}", flush=True)
+        model.load_weights(str(args.init_weights))
+
     model.fit(
         train_ds,
         epochs=tc["epochs"],
         steps_per_epoch=tc["steps_per_epoch"],
         validation_data=val_ds,
         callbacks=_build_callbacks(tc, args.outdir),
+        initial_epoch=args.initial_epoch,
     )
 
     model.save_weights(str(args.outdir / "final.weights.h5"))

@@ -105,13 +105,30 @@ def state_transitions(
     return list(ALLOWED_TRANSITIONS), init
 
 
-def state_start_dist() -> tuple[list[int], np.ndarray]:
-    """Allow start in any state with uniform initial probability.
+def state_start_dist(
+    restrict_to_ir_start: bool = False,
+    prior_ir: float = 0.5,
+) -> tuple[list[int], np.ndarray]:
+    """Initial-state distribution for the HMM.
 
-    Mirrors Tiberius's ``state_start_dist`` (which uses near-uniform random
-    init with ``train_start_dist=False``); this matters because the layer
-    is applied to chunked sequences whose first position is rarely IR.
+    Default: allow start in any state with uniform initial probability
+    (mirrors Tiberius's ``state_start_dist`` with ``train_start_dist=
+    False``); this matters because the layer is applied to chunked
+    sequences whose first position is rarely IR.
+
+    If ``restrict_to_ir_start`` is True the start is restricted to
+    {IR, START}: a transcript may begin in 5' UTR (IR) or at the ATG
+    itself (START) but not mid-codon (E1/E2/E0) or mid-stop. Use when
+    decoding whole transcripts. ``prior_ir`` sets P(IR) and P(START) =
+    1 - prior_ir. The ``init`` shape must match the number of allowed
+    states (TFHMM's ``kernel_start``).
     """
+    if restrict_to_ir_start:
+        if not 0.0 < prior_ir < 1.0:
+            raise ValueError("prior_ir must be in (0, 1)")
+        allow_start = [0, 1]  # 0=IR, 1=START
+        init = np.array([prior_ir, 1.0 - prior_ir], dtype=np.float32)
+        return allow_start, init
     allow_start = list(range(N_STATES))
     init = np.full(N_STATES, 1.0 / N_STATES, dtype=np.float32)
     return allow_start, init
@@ -293,6 +310,8 @@ class OrfAnnotationHMM(tf.keras.Layer):
         train_start_dist: bool = False,
         uniform_N: bool = False,
         use_codon_emitter: bool = True,
+        restrict_start_to_ir_start: bool = False,
+        ir_start_prior_ir: float = 0.5,
     ) -> None:
         super().__init__()
         self.mode = mode
@@ -315,13 +334,18 @@ class OrfAnnotationHMM(tf.keras.Layer):
         self._train_start_dist = train_start_dist
         self.uniform_N = uniform_N
         self.use_codon_emitter = use_codon_emitter
+        self.restrict_start_to_ir_start = restrict_start_to_ir_start
+        self.ir_start_prior_ir = float(ir_start_prior_ir)
 
         self.hmm = TFHMM(states=N_STATES, heads=1)
 
         allow, t_init = state_transitions(
             self.initial_ir_len, self.initial_exon_len,
         )
-        allow_start, s_init = state_start_dist()
+        allow_start, s_init = state_start_dist(
+            restrict_to_ir_start=restrict_start_to_ir_start,
+            prior_ir=self.ir_start_prior_ir,
+        )
         self.hmm.transitioner.allow = allow
         self.hmm.transitioner.initializer = t_init
         self.hmm.transitioner.allow_start = allow_start

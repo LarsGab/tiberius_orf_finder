@@ -55,10 +55,11 @@ from matplotlib.patches import Patch
 # ---------------------------------------------------------------------------
 _BENCH = Path("/home/gabriell/tiberius_benchmarking")
 
-REF_TMPL        = "/home/gabriell/tiberius_orf_finder/results/vertebrates_test/{sp}/assembly/annot_cds.gff"
+REF_TMPL        = "/projects/AI-GUSTUS/tiberius_orf_finder/results/vertebrates_test/{sp}/assembly/annot_cds.gff"
 TIB_TMPL        = str(_BENCH / "paper/Vertebrata/{sp}/results/predictions/tiberius/tiberius_seqlen.gtf")
 BRK_TMPL        = str(_BENCH / "paper/Vertebrata/{sp}/results/predictions/braker3/braker3.gtf")
 MERGE_SCRIPT    = Path("/home/gabriell//Tiberius/tiberius/scripts/merge_annotations.py")
+ORF_VS_TIB_SCRIPT = Path(__file__).resolve().parent / "filter_orf_against_tiberius.py"
 
 # Full ordered list of possible gene sets. The runtime subset is built in main()
 # based on which CLI options were provided.
@@ -133,6 +134,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="Path template for AnnEvo GTF, with '{sp}' for the species name. "
                          "When given, it is added as a separate plotted gene set 'annevo' "
                          "(not used in any merge).")
+    ap.add_argument("--filter-orf-vs-tib-subseq", action="store_true",
+                    help="Before the merge, drop ORF preds that are a strict sub-sequence "
+                         "of any Tiberius (or Tiberius-filtered when --tib-filtered-tmpl "
+                         "is set) isoform on the same contig+strand. Only the 'merged' "
+                         "row is affected; 'orf_prediction' stays as-is.")
     return ap.parse_args(argv)
 
 
@@ -164,6 +170,24 @@ def _run_merge(tib_gtf: Path, pred_gtf: Path, out_gtf: Path) -> bool:
         return out_gtf.stat().st_size > 0
     except subprocess.CalledProcessError as e:
         print(f"    [warn] merge failed: {e.stderr.decode()[:300]}", flush=True)
+        return False
+
+
+def _run_orf_vs_tib_filter(orf_gtf: Path, tib_gtf: Path, out_gtf: Path,
+                           report_tsv: Path) -> bool:
+    """Filter ORF preds that are subsequences of any Tiberius isoform.
+    Strict mode (no tolerances). Returns True on success."""
+    cmd = [sys.executable, str(ORF_VS_TIB_SCRIPT),
+           "--orf-gtf",      str(orf_gtf),
+           "--tiberius-gtf", str(tib_gtf),
+           "--out-gtf",      str(out_gtf),
+           "--report-tsv",   str(report_tsv)]
+    try:
+        subprocess.run(cmd, check=True, capture_output=True)
+        return out_gtf.stat().st_size > 0
+    except subprocess.CalledProcessError as e:
+        print(f"    [warn] orf-vs-tib filter failed: "
+              f"{e.stderr.decode()[:300]}", flush=True)
         return False
 
 
@@ -302,11 +326,26 @@ def main(argv: list[str] | None = None) -> int:
         tib_merge_gtf = tib_filt_gtf if has_tib_filt else tib_gtf
         tib_merge_label = "tiberius_filtered" if has_tib_filt else "tiberius"
 
-        # build merged = (tiberius or tiberius_filtered) + orf_prediction
+        # build merged = (tiberius or tiberius_filtered) + orf_prediction.
+        # Optionally pre-filter ORF preds that are subseqs of any tib isoform.
         merged_gtf = sp_work / "merged.gtf"
         if tib_merge_gtf.exists() and pred_gtf.exists():
-            print(f"  merging {tib_merge_label} + orf_prediction", flush=True)
-            if _run_merge(tib_merge_gtf, pred_gtf, merged_gtf):
+            merge_orf_gtf = pred_gtf
+            if args.filter_orf_vs_tib_subseq:
+                filt_orf_gtf = sp_work / "orf_filtered_vs_tib.gtf"
+                filt_report  = sp_work / "orf_filtered_vs_tib.dropped.tsv"
+                print(f"  filter orf vs {tib_merge_label} (subseq) -> "
+                      f"{filt_orf_gtf.name}", flush=True)
+                if _run_orf_vs_tib_filter(pred_gtf, tib_merge_gtf,
+                                          filt_orf_gtf, filt_report):
+                    merge_orf_gtf = filt_orf_gtf
+                else:
+                    print("  [warn] orf-vs-tib filter empty — using raw orf "
+                          "for merge", flush=True)
+            print(f"  merging {tib_merge_label} + "
+                  f"{'filtered ' if merge_orf_gtf is not pred_gtf else ''}"
+                  f"orf_prediction", flush=True)
+            if _run_merge(tib_merge_gtf, merge_orf_gtf, merged_gtf):
                 gene_set_gtfs["merged"] = merged_gtf
             else:
                 print("  [warn] merge produced empty output — skipping merged set", flush=True)

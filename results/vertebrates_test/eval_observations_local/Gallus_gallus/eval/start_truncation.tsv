@@ -1,0 +1,183 @@
+ref_tx	st_tx	strand	ref_atg_pos	pred_atg_pos	delta_bp	category
+rna-XM_046907229.1	STRG.523.1	-	1	89	88	late_start
+rna-XM_046907229.1	STRG.523.2	-	1	1	0	correct
+rna-XM_046909778.1	STRG.640.1	-	3			no_prediction
+rna-XM_040659332.2	STRG.640.1	-	3			no_prediction
+rna-XM_046909778.1	STRG.640.2	-	3	3	0	correct
+rna-XM_040659332.2	STRG.640.2	-	3	3	0	correct
+rna-XM_040659537.2	STRG.790.1	+	1			no_prediction
+rna-XM_040659540.2	STRG.790.1	+	1			no_prediction
+rna-XM_040659539.2	STRG.790.1	+	1			no_prediction
+rna-XM_040659538.2	STRG.790.1	+	1			no_prediction
+rna-XM_046909344.1	STRG.790.1	+	1			no_prediction
+rna-XM_040660558.2	STRG.918.3	-	3	738	735	late_start
+rna-XM_046910035.1	STRG.918.3	-	3	738	735	late_start
+rna-XM_040661539.2	STRG.1650.1	-	2	2	0	correct
+rna-XM_046907865.1	STRG.1976.1	-	2	112	110	late_start
+rna-XM_040660297.2	STRG.2663.1	+	1			no_prediction
+rna-XM_046909280.1	STRG.2788.1	-	0			no_prediction
+rna-XM_046909278.1	STRG.2788.1	-	0			no_prediction
+rna-XM_046909279.1	STRG.2788.1	-	0			no_prediction
+rna-XM_046909277.1	STRG.2788.1	-	0			no_prediction
+rna-XM_040657749.2	STRG.2788.1	-	0			no_prediction
+rna-XM_046909280.1	STRG.2788.2	-	0	384	384	late_start
+rna-XM_046909278.1	STRG.2788.2	-	0	384	384	late_start
+rna-XM_046909279.1	STRG.2788.2	-	0	384	384	late_start
+rna-XM_046909277.1	STRG.2788.2	-	0	384	384	late_start
+rna-XM_040657749.2	STRG.2788.2	-	0	384	384	late_start
+rna-XM_046909297.1	STRG.3322.4	+	3			no_prediction
+rna-XM_040659171.2	STRG.3322.4	+	3			no_prediction
+rna-NM_001024830.3	STRG.3818.1	-	2			no_prediction
+rna-XM_040664156.2	STRG.4213.2	-	0	346	346	late_start
+rna-XM_046911868.1	STRG.4213.2	-	0	346	346	late_start
+rna-XM_040664154.2	STRG.4213.2	-	0	346	346	late_start
+rna-XM_040664343.2	STRG.5075.5	-	3	3	0	correct
+rna-XM_040663965.2	STRG.5257.1	+	1			no_prediction
+rna-XM_040663966.2	STRG.5257.1	+	1			no_prediction
+rna-XM_046910673.1	STRG.5733.1	-	1	74	73	late_start
+rna-XM_040667073.2	STRG.6340.1	+	3	3	0	correct
+rna-XM_040667074.2	STRG.6340.1	+	3	3	0	correct
+rna-XM_046914406.1	STRG.7679.2	-	2	2	0	correct
+rna-NM_001348656.2	STRG.9152.1	-	3	3	0	correct
+rna-NM_001348656.2	STRG.9152.2	-	3	3	0	correct
+rna-XM_046916523.1	STRG.9301.1	+	3	77	74	late_start
+rna-XM_040671306.2	STRG.9586.1	+	3			no_prediction
+rna-XM_040671306.2	STRG.9586.2	+	3			no_prediction
+rna-XM_040671306.2	STRG.9586.3	+	3	164	161	late_start
+rna-XM_040671306.2	STRG.9586.4	+	3			no_prediction
+rna-XM_040670410.2	STRG.9850.2	+	0			no_prediction
+rna-NM_001277882.2	STRG.10813.1	-	1	1	0	correct
+rna-XM_040673895.1	STRG.10973.1	+	0	272	272	late_start
+rna-XM_040674554.2	STRG.12055.1	+	1	1	0	correct
+rna-XM_040675640.2	STRG.13175.1	-	3	262	259	late_start
+rna-XM_040675640.2	STRG.13175.2	-	3	262	259	late_start
+rna-NM_001389377.2	STRG.13374.1	-	3	3	0	correct
+rna-XM_046920915.1	STRG.13481.5	-	2			no_prediction
+rna-XM_040677200.2	STRG.14228.1	+	3	267	264	late_start
+rna-XM_040679008.1	STRG.14445.1	+	0			no_prediction
+rna-XM_040679009.1	STRG.14445.1	+	0			no_prediction
+rna-XM_040679011.1	STRG.14445.1	+	0			no_prediction
+rna-XM_040679013.1	STRG.14445.1	+	0			no_prediction
+rna-XM_040679015.1	STRG.14445.1	+	0			no_prediction
+rna-XM_040679016.1	STRG.14445.1	+	0			no_prediction
+rna-XM_040679010.1	STRG.14445.1	+	0			no_prediction
+rna-XM_040679018.1	STRG.14445.1	+	0			no_prediction
+rna-XM_040679012.1	STRG.14445.1	+	0			no_prediction
+rna-XM_040679014.1	STRG.14445.1	+	0			no_prediction
+rna-XM_040681482.2	STRG.15858.1	+	3	3	0	correct
+rna-XM_040681482.2	STRG.15858.2	+	3	3	0	correct
+rna-XM_046925846.1	STRG.16118.2	-	0			no_prediction
+rna-XM_040681201.2	STRG.16118.2	-	0			no_prediction
+rna-XM_040681196.2	STRG.16118.2	-	0			no_prediction
+rna-XM_046925844.1	STRG.16118.2	-	0			no_prediction
+rna-XM_040681200.2	STRG.16118.2	-	0			no_prediction
+rna-XM_046925840.1	STRG.16118.2	-	0			no_prediction
+rna-XM_040681199.2	STRG.16118.2	-	0			no_prediction
+rna-XM_046925842.1	STRG.16118.2	-	0			no_prediction
+rna-XM_040681195.2	STRG.16118.2	-	0			no_prediction
+rna-XM_040681818.1	STRG.16333.1	-	3	3	0	correct
+rna-XM_040681817.1	STRG.16333.1	-	3	3	0	correct
+rna-XM_040681816.1	STRG.16333.1	-	3	3	0	correct
+rna-XM_040681563.2	STRG.16596.1	-	2			no_prediction
+rna-NM_204152.2	STRG.18069.1	-	0			no_prediction
+rna-XM_040684813.2	STRG.18100.1	-	3	148	145	late_start
+rna-XM_040684808.2	STRG.18100.1	-	3	148	145	late_start
+rna-XM_040684800.2	STRG.18100.1	-	3	148	145	late_start
+rna-XM_040684811.2	STRG.18100.1	-	3	148	145	late_start
+rna-XM_040684810.2	STRG.18100.1	-	3	148	145	late_start
+rna-XM_040684799.2	STRG.18100.1	-	3	148	145	late_start
+rna-XM_040684813.2	STRG.18100.2	-	3	216	213	late_start
+rna-XM_040684808.2	STRG.18100.2	-	3	216	213	late_start
+rna-XM_040684800.2	STRG.18100.2	-	3	216	213	late_start
+rna-XM_040684811.2	STRG.18100.2	-	3	216	213	late_start
+rna-XM_040684810.2	STRG.18100.2	-	3	216	213	late_start
+rna-XM_040684799.2	STRG.18100.2	-	3	216	213	late_start
+rna-XM_040684813.2	STRG.18100.3	-	3	734	731	late_start
+rna-XM_040684808.2	STRG.18100.3	-	3	734	731	late_start
+rna-XM_040684800.2	STRG.18100.3	-	3	734	731	late_start
+rna-XM_040684811.2	STRG.18100.3	-	3	734	731	late_start
+rna-XM_040684810.2	STRG.18100.3	-	3	734	731	late_start
+rna-XM_040684799.2	STRG.18100.3	-	3	734	731	late_start
+rna-XM_040685138.2	STRG.18251.2	+	1	1	0	correct
+rna-XM_040685139.2	STRG.18251.2	+	1	1	0	correct
+rna-XM_040685138.2	STRG.18251.3	+	1	1	0	correct
+rna-XM_040685139.2	STRG.18251.3	+	1	1	0	correct
+rna-NM_001277658.2	STRG.18700.1	+	1			no_prediction
+rna-NM_001012997.2	STRG.18735.1	+	2			no_prediction
+rna-XM_040685508.2	STRG.18825.1	-	0			no_prediction
+rna-XM_046928907.1	STRG.18827.1	+	3	32	29	late_start
+rna-XM_040686311.2	STRG.19052.1	+	0			no_prediction
+rna-XM_040686594.2	STRG.19237.1	-	1			no_prediction
+rna-XM_040687489.2	STRG.19312.2	-	1	1	0	correct
+rna-XM_040687488.2	STRG.19312.2	-	1	1	0	correct
+rna-XM_040687487.2	STRG.19312.2	-	1	1	0	correct
+rna-NM_001282341.2	STRG.19613.2	+	1	1652	1651	late_start
+rna-NM_001168008.2	STRG.20559.1	+	1	1	0	correct
+rna-XM_040689668.2	STRG.20827.2	-	2	747	745	late_start
+rna-XM_046932212.1	STRG.20951.3	+	2	2	0	correct
+rna-XM_046932212.1	STRG.20951.4	+	2	2	0	correct
+rna-XM_046932212.1	STRG.20951.5	+	2	2	0	correct
+rna-XM_040691043.2	STRG.21580.1	+	2	2	0	correct
+rna-XM_040691044.2	STRG.21580.1	+	2	2	0	correct
+rna-XM_040691045.2	STRG.21580.1	+	2	2	0	correct
+rna-XM_040691046.2	STRG.21580.1	+	2	2	0	correct
+rna-XM_040691043.2	STRG.21580.2	+	2	2	0	correct
+rna-XM_040691044.2	STRG.21580.2	+	2	2	0	correct
+rna-XM_040691045.2	STRG.21580.2	+	2	2	0	correct
+rna-XM_040691046.2	STRG.21580.2	+	2	2	0	correct
+rna-XM_040692076.2	STRG.22198.1	-	3			no_prediction
+rna-XM_040692978.2	STRG.22974.5	+	3	3	0	correct
+rna-XM_040693087.2	STRG.23068.1	-	0			no_prediction
+rna-XM_040693086.2	STRG.23068.1	-	0			no_prediction
+rna-XM_040693100.2	STRG.23094.1	-	0			no_prediction
+rna-XM_040693099.2	STRG.23094.1	-	0			no_prediction
+rna-XM_040693098.2	STRG.23094.1	-	0			no_prediction
+rna-XM_040693144.2	STRG.23098.1	-	0			no_prediction
+rna-XM_040693143.2	STRG.23098.1	-	0			no_prediction
+rna-XM_040694488.2	STRG.23120.1	-	3	123	120	late_start
+rna-XM_040694489.2	STRG.23120.1	-	3	123	120	late_start
+rna-XM_040694488.2	STRG.23120.2	-	3	82	79	late_start
+rna-XM_040694489.2	STRG.23120.2	-	3	82	79	late_start
+rna-XM_040694652.1	STRG.23218.1	+	1			no_prediction
+rna-NM_001044659.1	STRG.23348.1	-	0	6	6	late_start
+rna-NM_001044659.1	STRG.23348.2	-	0	6	6	late_start
+rna-NM_001044659.1	STRG.23348.3	-	0	6	6	late_start
+rna-NM_001044659.1	STRG.23348.4	-	0	6	6	late_start
+rna-NM_001044659.1	STRG.23348.7	-	0	6	6	late_start
+rna-NM_001044659.1	STRG.23348.8	-	0	6	6	late_start
+rna-NM_001044659.1	STRG.23348.9	-	0	6	6	late_start
+rna-NM_001044659.1	STRG.23348.10	-	0	6	6	late_start
+rna-NM_001044659.1	STRG.23348.11	-	0	6	6	late_start
+rna-NM_001044659.1	STRG.23348.12	-	0	6	6	late_start
+rna-NM_001044659.1	STRG.23348.13	-	0	6	6	late_start
+rna-XM_040694015.1	STRG.23538.1	-	2			no_prediction
+rna-XM_040694243.1	STRG.23933.1	-	3			no_prediction
+rna-XM_046934473.1	STRG.23945.1	+	1	1	0	correct
+rna-XM_046934473.1	STRG.23945.2	+	1	1	0	correct
+rna-NM_001302168.1	STRG.24320.1	-	0			no_prediction
+rna-XM_046936622.1	STRG.24765.1	+	0	342	342	late_start
+rna-XM_046936623.1	STRG.24765.1	+	0	342	342	late_start
+rna-XM_046936625.1	STRG.24765.1	+	0	342	342	late_start
+rna-XM_046936630.1	STRG.24765.1	+	0	342	342	late_start
+rna-XM_046936631.1	STRG.24765.1	+	0	342	342	late_start
+rna-XM_046936629.1	STRG.24765.1	+	0	342	342	late_start
+rna-XM_046936622.1	STRG.24765.2	+	0	298	298	late_start
+rna-XM_046936623.1	STRG.24765.2	+	0	298	298	late_start
+rna-XM_046936625.1	STRG.24765.2	+	0	298	298	late_start
+rna-XM_046936630.1	STRG.24765.2	+	0	298	298	late_start
+rna-XM_046936631.1	STRG.24765.2	+	0	298	298	late_start
+rna-XM_046936629.1	STRG.24765.2	+	0	298	298	late_start
+rna-XM_046936622.1	STRG.24765.3	+	0	342	342	late_start
+rna-XM_046936623.1	STRG.24765.3	+	0	342	342	late_start
+rna-XM_046936625.1	STRG.24765.3	+	0	342	342	late_start
+rna-XM_046936630.1	STRG.24765.3	+	0	342	342	late_start
+rna-XM_046936631.1	STRG.24765.3	+	0	342	342	late_start
+rna-XM_046936629.1	STRG.24765.3	+	0	342	342	late_start
+rna-XM_040695045.1	STRG.25688.1	-	0			no_prediction
+rna-NM_001397234.1-2	STRG.25976.1	+	0			no_prediction
+rna-NM_001397234.1-2	STRG.25976.2	+	0			no_prediction
+rna-NM_001397234.1-2	STRG.25976.3	+	0			no_prediction
+rna-NM_001397234.1-2	STRG.25976.4	+	0			no_prediction
+rna-NM_001397234.1-2	STRG.25976.5	+	0			no_prediction
+rna-XM_046937773.1	STRG.25979.1	-	1	112	111	late_start
+rna-XM_040695365.1	STRG.25981.1	+	0			no_prediction

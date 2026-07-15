@@ -24,7 +24,9 @@ set -euo pipefail
 
 PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 
-SPECIES_CSV=${PROJDIR}/results/integrity_checks/split_vertebrates/from_scratch.csv
+# Allow override (e.g. point at an "unfinished species only" CSV when
+# re-running after wiping the work tree to free disk).
+SPECIES_CSV=${SPECIES_CSV:-${PROJDIR}/results/integrity_checks/split_vertebrates/from_scratch.csv}
 
 OUTDIR=${PROJDIR}/results/training_vertebrates_v2
 

@@ -47,6 +47,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 import numpy as np
 import yaml
 
+from tiberius_orf.data.tx_to_genome import project_tx_intervals_to_genomic as _project_tx_intervals_to_genomic  # noqa: E402
+
 
 def _enable_gpu_memory_growth() -> None:
     """Switch TF off its default preallocate-everything mode.
@@ -88,6 +90,36 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--no-codon-emitter", action="store_true",
                     help="Disable hard ATG/STOP/in-frame-stop codon "
                          "constraints in the HMM (debugging variant).")
+    ap.add_argument("--restrict-start-to-ir-start", action="store_true",
+                    help="Restrict the HMM's initial-state distribution "
+                         "to {IR, START}. A whole-transcript decode "
+                         "shouldn't begin mid-codon (E1/E2/E0) or mid-stop.")
+    ap.add_argument("--ir-prior", type=float, default=0.5,
+                    help="P(start in IR) under --restrict-start-to-ir-start; "
+                         "P(start in START) is the complement. Default 0.5. "
+                         "Higher values bias the decoder toward calling 5' "
+                         "UTR rather than starting the CDS at position 0.")
+    ap.add_argument("--prefix-pad-n", type=int, default=0,
+                    help="Prepend this many 'N' bases to each transcript "
+                         "before inference. Gives the CNN / codon emitter "
+                         "left-context at position 0; the pad is stripped "
+                         "from output transcript-coords. ORFs that would "
+                         "start inside the pad are dropped. Default 0.")
+    ap.add_argument("--flank-bp", type=int, default=0,
+                    help="Prepend this many bases of real genomic upstream "
+                         "context to each transcript (reverse-complemented "
+                         "for '-' strand). Where the chromosome edge cuts "
+                         "the upstream short, the remaining positions are "
+                         "padded with N. Mutually exclusive with "
+                         "--prefix-pad-n. Default postprocess drops ORFs "
+                         "whose START falls in the flank.")
+    ap.add_argument("--flank-clip", action="store_true",
+                    help="With --flank-bp: instead of dropping ORFs whose "
+                         "START is in the flank, clip them to start at the "
+                         "next in-frame codon boundary at or after the tx "
+                         "5' end. Emits a 5'-truncated CDS for cases where "
+                         "the model thinks the CDS extends upstream of the "
+                         "assembled transcript. Requires --flank-bp > 0.")
     ap.add_argument("--threads", type=int, default=4,
                     help="Threads for stringtie/gffread.")
     ap.add_argument("--longread", action="store_true",
@@ -148,6 +180,109 @@ def _gtf_attr(attr_col: str, key: str) -> str | None:
         if len(parts) == 2 and parts[0] == key:
             return parts[1].strip().strip('"')
     return None
+
+
+_RC_TABLE = str.maketrans("ACGTNacgtn", "TGCANtgcan")
+
+
+def _rev_comp(seq: str) -> str:
+    return seq.translate(_RC_TABLE)[::-1]
+
+
+def _build_flank_prefixes(
+    stringtie_gtf: Path,
+    genome_fa: Path,
+    k: int,
+) -> dict[str, str]:
+    """Return ``{tx_id: K-bp upstream genomic prefix}`` for every tx in the GTF.
+
+    The prefix is real genomic bases (RC for '-' strand) for transcripts
+    far enough from a chromosome edge; shorter cases are left-padded with
+    N so every prefix is exactly K characters. Non-ACGTN bases are mapped
+    to N so the model's input encoder behaves sanely.
+    """
+    from pyfaidx import Fasta
+
+    # Per-tx (contig, strand, first_exon_genomic_start, last_exon_genomic_end).
+    # GTF is 1-based inclusive; convert to 0-based half-open exon coords as
+    # we go so the genome slice arithmetic stays straightforward.
+    tx_extent: dict[str, tuple[str, str, int, int]] = {}
+    for raw in Path(stringtie_gtf).read_text().splitlines():
+        if not raw or raw.startswith("#"):
+            continue
+        f = raw.split("\t")
+        if len(f) < 9 or f[2] != "exon":
+            continue
+        tid = _gtf_attr(f[8], "transcript_id")
+        if tid is None:
+            continue
+        contig = f[0]
+        strand = f[6]
+        s = int(f[3]) - 1
+        e = int(f[4])
+        if tid in tx_extent:
+            _, _, lo, hi = tx_extent[tid]
+            tx_extent[tid] = (contig, strand, min(lo, s), max(hi, e))
+        else:
+            tx_extent[tid] = (contig, strand, s, e)
+
+    genome = Fasta(str(genome_fa), as_raw=True, sequence_always_upper=True)
+    out: dict[str, str] = {}
+    for tid, (contig, strand, lo, hi) in tx_extent.items():
+        if contig not in genome:
+            out[tid] = "N" * k
+            continue
+        chrom_len = len(genome[contig])
+        if strand == "+":
+            up_lo = max(0, lo - k)
+            seq = str(genome[contig][up_lo:lo])
+            if len(seq) < k:
+                seq = "N" * (k - len(seq)) + seq
+        elif strand == "-":
+            up_hi = min(chrom_len, hi + k)
+            seq = str(genome[contig][hi:up_hi])
+            if len(seq) < k:
+                seq = seq + "N" * (k - len(seq))
+            seq = _rev_comp(seq)
+        else:
+            seq = "N" * k
+
+        # Sanitize any non-ACGTN to N (matches encode_nucleotides fallback).
+        seq = "".join(c if c in "ACGTN" else "N" for c in seq)
+        out[tid] = seq
+    return out
+
+
+def _rewrite_with_prefix(
+    in_fa: Path,
+    out_fa: Path,
+    prefixes: dict[str, str] | None,
+    default: str,
+) -> int:
+    """Copy ``in_fa`` to ``out_fa`` prepending a per-tx prefix to each record.
+
+    If ``prefixes`` is None or a tx is missing from it, ``default`` is used.
+    Returns the number of records written.
+    """
+    n = 0
+    current_tid: str | None = None
+    first_seq_line = True
+    with open(in_fa) as fin, open(out_fa, "w") as fout:
+        for line in fin:
+            if line.startswith(">"):
+                fout.write(line)
+                current_tid = line[1:].strip().split()[0]
+                first_seq_line = True
+                n += 1
+            else:
+                if first_seq_line:
+                    prefix = default
+                    if prefixes is not None and current_tid in prefixes:
+                        prefix = prefixes[current_tid]
+                    fout.write(prefix)
+                    first_seq_line = False
+                fout.write(line)
+    return n
 
 
 def _parse_tx_to_gene(gtf_path: Path) -> dict[str, str]:
@@ -360,54 +495,6 @@ def _make_predict_func(
     return predict_func
 
 
-def _project_tx_intervals_to_genomic(
-    tx_id: str,
-    cds_intervals: list[tuple[int, int]],
-    tx,
-    source: str,
-) -> list[str]:
-    """Project transcript-coord half-open CDS intervals onto the genome
-    using the StringTie exon structure and emit GTF CDS lines.
-
-    Each ``(tx_start, tx_end)`` is treated as one ORF for phase
-    computation (phase = bases to skip to reach the next codon start;
-    see ``tiberius_orf.data.gtf_writer.labels_to_gtf_lines`` for the
-    same convention).
-    """
-    out: list[str] = []
-    for orf_tx_start, orf_tx_end in cds_intervals:
-        if orf_tx_start >= orf_tx_end:
-            continue
-        exons_in_tx_order = (
-            list(tx.exons) if tx.strand == "+" else list(reversed(tx.exons))
-        )
-        cumulative = 0
-        per_segment: list[tuple[int, int, int]] = []
-        for g_start, g_end in exons_in_tx_order:
-            exon_len = g_end - g_start
-            lo = max(orf_tx_start, cumulative)
-            hi = min(orf_tx_end, cumulative + exon_len)
-            if lo < hi:
-                off_lo = lo - cumulative
-                off_hi = hi - cumulative
-                if tx.strand == "+":
-                    g_lo, g_hi = g_start + off_lo, g_start + off_hi
-                else:
-                    g_lo, g_hi = g_end - off_hi, g_end - off_lo
-                per_segment.append((g_lo, g_hi, lo))
-            cumulative += exon_len
-            if cumulative >= orf_tx_end:
-                break
-        per_segment.sort()
-        for g_lo, g_hi, tx_pos in per_segment:
-            phase = (3 - (tx_pos - orf_tx_start) % 3) % 3
-            out.append("\t".join([
-                tx.contig, source, "CDS",
-                str(g_lo + 1), str(g_hi),
-                ".", tx.strand, str(phase),
-                f'transcript_id "{tx_id}"; gene_id "{tx_id}";',
-            ]))
-    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -465,6 +552,45 @@ def main(argv: list[str] | None = None) -> int:
     else:
         transcripts_fa = args.transcripts_fa
 
+    # 2b. optional 5' padding. Two modes:
+    #   --prefix-pad-n K   : prepend K literal Ns.
+    #   --flank-bp     K   : prepend K bp of REAL upstream genomic context
+    #                        (RC for '-' strand); short chromosome edges
+    #                        are N-filled so the prefix is always length K.
+    # Either way the prefix is stripped in postprocess and any ORF that
+    # starts inside it is dropped.
+    if args.prefix_pad_n > 0 and args.flank_bp > 0:
+        sys.exit("--prefix-pad-n and --flank-bp are mutually exclusive")
+
+    if args.prefix_pad_n > 0:
+        K = args.prefix_pad_n
+        padded_fa = args.out_dir / f"transcripts.pad{K}.fa"
+        prefixes: dict[str, str] | None = None  # uniform "N"*K
+        n_tx = _rewrite_with_prefix(
+            transcripts_fa, padded_fa, prefixes, default="N" * K,
+        )
+        print(f"Wrote 5'-padded FASTA (K={K}, n_tx={n_tx}) -> {padded_fa}",
+              flush=True)
+        transcripts_fa = padded_fa
+    elif args.flank_bp > 0:
+        K = args.flank_bp
+        flank_fa = args.out_dir / f"transcripts.flank{K}.fa"
+        print(
+            f"Building 5'-flank prefixes (K={K}) from {args.genome} ...",
+            flush=True,
+        )
+        prefixes = _build_flank_prefixes(stringtie_gtf, args.genome, K)
+        n_tx = _rewrite_with_prefix(
+            transcripts_fa, flank_fa, prefixes, default="N" * K,
+        )
+        n_full = sum(1 for v in prefixes.values() if "N" not in v)
+        print(
+            f"Wrote 5'-flanked FASTA (K={K}, n_tx={n_tx}, "
+            f"n_full_genomic_prefix={n_full}) -> {flank_fa}",
+            flush=True,
+        )
+        transcripts_fa = flank_fa
+
     # 3. load model + HMM
     import tensorflow as tf  # noqa: F401
     _enable_gpu_memory_growth()
@@ -480,10 +606,14 @@ def main(argv: list[str] | None = None) -> int:
     hmm = build_decoder_hmm(
         parallel=args.parallel,
         use_codon_emitter=not args.no_codon_emitter,
+        restrict_start_to_ir_start=args.restrict_start_to_ir_start,
+        ir_start_prior_ir=args.ir_prior,
     )
     print(
         f"Built OrfAnnotationHMM (parallel={args.parallel}, "
-        f"codon_emitter={not args.no_codon_emitter})",
+        f"codon_emitter={not args.no_codon_emitter}, "
+        f"restrict_start_to_ir_start={args.restrict_start_to_ir_start}, "
+        f"ir_prior={args.ir_prior})",
         flush=True,
     )
 
@@ -515,7 +645,14 @@ def main(argv: list[str] | None = None) -> int:
     # group). tid -> (coding_length, [gtf_lines])
     per_tx_output: dict[str, tuple[int, list[str]]] = {}
 
+    pad_k = max(args.prefix_pad_n, args.flank_bp)
+    if args.flank_clip and args.flank_bp == 0:
+        sys.exit("--flank-clip requires --flank-bp > 0")
+    clip_in_pad = args.flank_clip
+    n_unchanged = n_clipped = n_dropped_in_pad = 0
+
     def postprocess(_fasta, annot):
+        nonlocal n_unchanged, n_clipped, n_dropped_in_pad
         # Same short-ORF filter Tiberius uses (b2m.tools.check_min_coding_length
         # at 200 nt). Removed in place; nothing downstream sees the dropped tx.
         if args.min_coding_length > 0:
@@ -530,6 +667,48 @@ def main(argv: list[str] | None = None) -> int:
                 cds_intervals = [(c.start, c.end) for c in tx.cds]
                 if not cds_intervals:
                     continue
+                # Strip 5' prefix. Two policies depending on the prefix kind:
+                #   --prefix-pad-n : drop ORFs whose START is in the pad
+                #                    (literal Ns have no real ATG, so a
+                #                    START there is a decoder hallucination).
+                #   --flank-bp     : clip ORFs whose START is in the flank.
+                #                    Real upstream genomic context CAN
+                #                    contain a true ATG, so we keep the
+                #                    in-tx CDS portion as a 5'-truncated
+                #                    ORF starting at the next in-frame
+                #                    codon boundary at or after pad_k.
+                if pad_k > 0:
+                    if cds_intervals[0][0] < pad_k:
+                        if not clip_in_pad:
+                            n_dropped_in_pad += 1
+                            continue
+                        s_orig = cds_intervals[0][0]
+                        new_intervals: list[tuple[int, int]] = []
+                        for s, e in cds_intervals:
+                            if e <= pad_k:
+                                continue                  # entirely in flank
+                            new_intervals.append((max(s, pad_k), e))
+                        if not new_intervals:
+                            n_dropped_in_pad += 1
+                            continue
+                        # Advance new start to the next in-frame codon
+                        # boundary so emitted GTF phase=0 at the first base.
+                        frame_shift = (3 - (new_intervals[0][0] - s_orig) % 3) % 3
+                        if frame_shift > 0:
+                            s0, e0 = new_intervals[0]
+                            if s0 + frame_shift >= e0:
+                                new_intervals.pop(0)
+                            else:
+                                new_intervals[0] = (s0 + frame_shift, e0)
+                        if not new_intervals:
+                            n_dropped_in_pad += 1
+                            continue
+                        cds_intervals = new_intervals
+                        n_clipped += 1
+                    else:
+                        n_unchanged += 1
+                    cds_intervals = [(s - pad_k, e - pad_k)
+                                     for s, e in cds_intervals]
                 # Reference-free proxy for the curation pipeline's
                 # 'dropped_not_contained' category: skip ORFs whose START
                 # or STOP sits flush against a transcript end (= the
@@ -605,6 +784,13 @@ def main(argv: list[str] | None = None) -> int:
         f"to {out_gtf}",
         flush=True,
     )
+    if pad_k > 0:
+        print(
+            f"5'-prefix postprocess: unchanged={n_unchanged} "
+            f"clipped_in_pad={n_clipped} dropped_in_pad={n_dropped_in_pad} "
+            f"(clip_policy={'on' if clip_in_pad else 'off'})",
+            flush=True,
+        )
 
     if cleanup:
         shutil.rm(intermediate_gtf, ignore_errors=True)

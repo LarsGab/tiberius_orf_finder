@@ -38,6 +38,8 @@ def build_decoder_hmm(
     initial_exon_len: float = 600.0,
     emitter_epsilon: float = 0.01,
     use_codon_emitter: bool = True,
+    restrict_start_to_ir_start: bool = False,
+    ir_start_prior_ir: float = 0.5,
 ) -> OrfAnnotationHMM:
     """Build a Viterbi-mode :class:`OrfAnnotationHMM` ready for decoding.
 
@@ -45,6 +47,12 @@ def build_decoder_hmm(
     not-stop-at-E2 / stop-at-STOP nucleotide constraints — useful as a
     debugging variant equivalent to "soft transitions + stream emitter
     only" (closest analogue of the pure-numpy ``viterbi_decode``).
+
+    Set ``restrict_start_to_ir_start=True`` to restrict the HMM's
+    initial-state distribution to {IR, START}; a whole-transcript decode
+    should never begin mid-codon or mid-stop. ``ir_start_prior_ir`` sets
+    P(start in IR); P(start in START) is the complement. Only meaningful
+    when ``restrict_start_to_ir_start`` is True.
     """
     return OrfAnnotationHMM(
         mode=HMMMode.VITERBI,
@@ -53,6 +61,8 @@ def build_decoder_hmm(
         initial_exon_len=initial_exon_len,
         emitter_epsilon=emitter_epsilon,
         use_codon_emitter=use_codon_emitter,
+        restrict_start_to_ir_start=restrict_start_to_ir_start,
+        ir_start_prior_ir=ir_start_prior_ir,
     )
 
 

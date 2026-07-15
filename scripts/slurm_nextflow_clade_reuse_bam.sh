@@ -39,7 +39,9 @@ SPLIT=${SPLIT:-training}
 PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 
 SPLIT_DIR=${PROJDIR}/results/integrity_checks/split_${CLADE}_${SPLIT}
-SPECIES_CSV=${SPLIT_DIR}/reuse_bam.csv
+# Allow override (e.g. to retry a narrow slice of species with bumped
+# resources without touching the canonical reuse_bam.csv).
+SPECIES_CSV=${SPECIES_CSV:-${SPLIT_DIR}/reuse_bam.csv}
 
 # Keep the bare ${CLADE}_v2 name for the training split (already used by
 # downstream training scripts); suffix non-training splits so val/test
@@ -67,6 +69,12 @@ esac
 eval "$(micromamba shell hook --shell bash)"
 micromamba activate orffinder
 export NXF_OPTS='-Xms1g -Xmx4g'
+
+# Keep tmp off /tmp — several brain compute nodes have tiny/full /tmp and
+# Nextflow + JVM abort at startup with "No space left on device". Redirect
+# to a per-run tmp under /projects/ (same fs as RUNDIR).
+export TMPDIR=${RUNDIR}/tmp
+mkdir -p "${TMPDIR}"
 
 # ---- per-clade staging dir overrides ----
 # fetch.nf needs --braker_data_dir for diatoms (BRAKER annotation) and

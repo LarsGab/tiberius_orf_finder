@@ -59,7 +59,8 @@
       "Bash(scp \"c:/Users/lgabr/git/tiberius_orf_finder/scripts/slurm_longread_download.sh\" \"brain:/projects/AI-GUSTUS/tiberius_orf_finder/scripts/slurm_longread_download.sh\")",
       "Bash(scp c:/Users/lgabr/git/tiberius_orf_finder/scripts/slurm_evaluate_cnn_lstm_embryophyta_run001.sh brain:/projects/AI-GUSTUS/tiberius_orf_finder/scripts/)",
       "Bash(bash -n \"C:\\\\Users\\\\lgabr\\\\git\\\\tiberius_orf_finder\\\\scripts\\\\slurm_annotate_embryophyta_test_run001.sh\")",
-      "Bash(scp c:/Users/lgabr/git/tiberius_orf_finder/scripts/slurm_annotate_embryophyta_test_run001.sh c:/Users/lgabr/git/tiberius_orf_finder/scripts/annotate.py brain:/projects/AI-GUSTUS/tiberius_orf_finder/scripts/)"
+      "Bash(scp c:/Users/lgabr/git/tiberius_orf_finder/scripts/slurm_annotate_embryophyta_test_run001.sh c:/Users/lgabr/git/tiberius_orf_finder/scripts/annotate.py brain:/projects/AI-GUSTUS/tiberius_orf_finder/scripts/)",
+      "Bash(scp c:/Users/lgabr/git/tiberius_orf_finder/scripts/evaluate_accuracy.py c:/Users/lgabr/git/tiberius_orf_finder/scripts/slurm_benchmark_transdecoder1_embryophyta_test.sh c:/Users/lgabr/git/tiberius_orf_finder/scripts/slurm_benchmark_transdecoder2_embryophyta_test.sh c:/Users/lgabr/git/tiberius_orf_finder/scripts/slurm_benchmark_transdecoder2_precise_embryophyta_test.sh c:/Users/lgabr/git/tiberius_orf_finder/scripts/slurm_benchmark_gmst_embryophyta_test.sh c:/Users/lgabr/git/tiberius_orf_finder/scripts/slurm_eval_orf_tool_benchmarks_embryophyta_test.sh c:/Users/lgabr/git/tiberius_orf_finder/scripts/slurm_evaluate_accuracy_embryophyta_test.sh brain:/projects/AI-GUSTUS/tiberius_orf_finder/scripts/)"
     ]
   },
   "hooks": {

@@ -139,6 +139,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                          "of any Tiberius (or Tiberius-filtered when --tib-filtered-tmpl "
                          "is set) isoform on the same contig+strand. Only the 'merged' "
                          "row is affected; 'orf_prediction' stays as-is.")
+    ap.add_argument("--ref-tmpl", type=str, default=REF_TMPL,
+                    help="Path template for reference annot_cds.gff, with '{sp}' placeholder. "
+                         "Default: vertebrates_test layout.")
+    ap.add_argument("--tib-tmpl", type=str, default=TIB_TMPL,
+                    help="Path template for Tiberius ab-initio GTF, with '{sp}' placeholder. "
+                         "Default: Vertebrata benchmarking layout.")
+    ap.add_argument("--brk-tmpl", type=str, default=BRK_TMPL,
+                    help="Path template for BRAKER3 GTF, with '{sp}' placeholder. "
+                         "Default: Vertebrata benchmarking layout.")
     return ap.parse_args(argv)
 
 
@@ -264,10 +273,10 @@ def main(argv: list[str] | None = None) -> int:
 
     for sp in species_list:
         print(f"\n=== {sp} ===", flush=True)
-        ref      = Path(REF_TMPL.format(sp=sp))
+        ref      = Path(args.ref_tmpl.format(sp=sp))
         pred_gtf = args.pred_dir / sp / "prediction.gtf"
-        tib_gtf  = Path(TIB_TMPL.format(sp=sp))
-        brk_gtf  = Path(BRK_TMPL.format(sp=sp))
+        tib_gtf  = Path(args.tib_tmpl.format(sp=sp))
+        brk_gtf  = Path(args.brk_tmpl.format(sp=sp))
         tib_filt_gtf   = Path(args.tib_filtered_tmpl.format(sp=sp))       if has_tib_filt   else None
         orion_gtf      = Path(args.oriongeno_tmpl.format(sp=sp))          if has_orion      else None
         orion_filt_gtf = Path(args.oriongeno_filtered_tmpl.format(sp=sp)) if has_orion_filt else None

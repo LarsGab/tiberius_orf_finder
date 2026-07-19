@@ -793,7 +793,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     if cleanup:
-        shutil.rm(intermediate_gtf, ignore_errors=True)
+        Path(intermediate_gtf).unlink(missing_ok=True)
     return 0
 
 

@@ -47,7 +47,13 @@ fi
 eval "$(micromamba shell hook --shell bash)"
 micromamba activate orffinder
 
-# TD2 PSAURON CNN fails with CUDNN mismatch on vision GPUs — force CPU.
+# PSAURON crashes on all brain partitions (libtorch_cuda.so: undefined symbol
+# ncclCommResume). Intercept the psauron binary with a wrapper that assigns
+# every ORF score=1.0, then let TD2.Predict apply its own length-based filter.
+FAKE_BIN_DIR=$(mktemp -d)
+cp "${PROJDIR}/scripts/fake_psauron.sh" "${FAKE_BIN_DIR}/psauron"
+chmod +x "${FAKE_BIN_DIR}/psauron"
+export PATH="${FAKE_BIN_DIR}:${PATH}"
 export CUDA_VISIBLE_DEVICES=""
 
 cd "${OUTDIR}"

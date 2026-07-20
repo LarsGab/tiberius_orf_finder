@@ -1,0 +1,16 @@
+species	gene_set	gene_S	gene_P	gene_F1	transcript_S	transcript_P	transcript_F1	exon_S	exon_P	exon_F1
+Bos_taurus	orf_prediction	46.1	81.6	58.92	25.4	51.4	34.0	58.4	91.4	71.27
+Bos_taurus	tiberius	62.2	57.8	59.92	27.3	57.8	37.08	82.5	90.2	86.18
+Bos_taurus	tiberius_filtered	62.2	57.8	59.92	27.3	57.8	37.08	82.5	90.2	86.18
+Bos_taurus	merged	73.0	67.0	69.87	38.4	47.1	42.31	86.0	86.0	86.0
+Bos_taurus	braker3	64.4	77.0	70.14	32.9	71.3	45.02	67.2	94.9	78.68
+Zootoca_vivipara	orf_prediction	54.5	71.6	61.89	37.9	39.6	38.73	66.3	87.5	75.44
+Zootoca_vivipara	tiberius	60.0	52.5	56.0	34.8	52.5	41.86	87.3	89.0	88.14
+Zootoca_vivipara	tiberius_filtered	56.2	63.0	59.41	32.6	63.0	42.97	80.0	93.1	86.05
+Zootoca_vivipara	merged	71.9	72.3	72.1	49.2	39.5	43.82	88.2	85.8	86.98
+Zootoca_vivipara	braker3	71.7	77.0	74.26	49.1	65.7	56.2	80.3	93.8	86.53
+Betta_splendens	orf_prediction	50.6	80.7	62.2	29.4	61.7	39.82	58.4	94.3	72.13
+Betta_splendens	tiberius	72.2	68.3	70.2	37.8	68.3	48.67	88.8	93.5	91.09
+Betta_splendens	tiberius_filtered	71.2	75.4	73.24	37.2	75.4	49.82	84.4	95.5	89.61
+Betta_splendens	merged	79.0	81.1	80.04	45.9	61.0	52.38	88.4	92.7	90.5
+Betta_splendens	braker3	77.9	84.6	81.11	48.3	73.8	58.39	84.5	96.4	90.06

@@ -78,11 +78,25 @@ done
 echo "[$(date -Iseconds)] accuracy table -> ${TABLE}"
 column -t -s$'\t' "${TABLE}"
 
+# StringTie sensitivity upper bound (what any ORF-finder can maximally achieve).
+UB_TSV=${OUT_ROOT}/stringtie_upper_bound.tsv
 echo ""
-echo "[$(date -Iseconds)] generating locus-level accuracy plot"
-python "${PROJDIR}/scripts/plot_orf_tool_accuracy.py" \
-    --table "${TABLE}" \
-    --level locus \
-    --out   "${OUT_ROOT}/locus_accuracy.pdf"
+echo "[$(date -Iseconds)] computing stringtie upper bound"
+python "${PROJDIR}/scripts/compute_stringtie_upper_bound.py" \
+    --species        "${SPECIES[@]}" \
+    --ref-tmpl       "${TESTDIR}/{sp}/assembly/annot_cds.gff" \
+    --stringtie-tmpl "${TESTDIR}/{sp}/stringtie/stringtie.gtf" \
+    --out-tsv        "${UB_TSV}"
+column -t -s$'\t' "${UB_TSV}"
 
-echo "[$(date -Iseconds)] done -> ${OUT_ROOT}/locus_accuracy.pdf"
+# Generate plots at both locus and transcript levels.
+for lvl in locus transcript; do
+    echo "[$(date -Iseconds)] plotting ${lvl} level"
+    python "${PROJDIR}/scripts/plot_orf_tool_accuracy.py" \
+        --table           "${TABLE}" \
+        --level           "${lvl}" \
+        --upper-bound-tsv "${UB_TSV}" \
+        --out             "${OUT_ROOT}/${lvl}_accuracy.pdf"
+done
+
+echo "[$(date -Iseconds)] done -> ${OUT_ROOT}/{locus,transcript}_accuracy.pdf"

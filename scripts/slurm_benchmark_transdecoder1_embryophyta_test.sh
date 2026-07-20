@@ -58,20 +58,27 @@ if [[ ! -s "${SHARED_FA}" ]]; then
     mkdir -p "$(dirname "${SHARED_FA}")"
     gffread -w "${SHARED_FA}" -g "${GENOME}" "${STRINGTIE}"
 fi
-ln -sf "${SHARED_FA}" transcripts.fa
-n_tx=$(grep -c '^>' transcripts.fa)
-echo "  transcripts.fa: ${n_tx} records"
+# Filter zero-length sequences — TD1 aborts on empty records.
+FILTERED_FA=${OUTDIR}/transcripts_filtered.fa
+awk '/^>/{if(seq!="")print prev"\n"seq; prev=$0; seq=""; next}
+     {seq=seq$0}
+     END{if(seq!="")print prev"\n"seq}' "${SHARED_FA}" > "${FILTERED_FA}"
+# Use a distinct symlink name so TD1 creates a fresh transdecoder_dir
+# (avoids stale files from any prior failed run on transcripts.fa).
+ln -sf "${FILTERED_FA}" transcripts_filt.fa
+n_tx=$(grep -c '^>' transcripts_filt.fa || true)
+echo "  transcripts_filt.fa: ${n_tx} records (after empty-seq filter)"
 
-"${TD1_DIR}/TransDecoder.LongOrfs" -t transcripts.fa
-"${TD1_DIR}/TransDecoder.Predict"  -t transcripts.fa
+"${TD1_DIR}/TransDecoder.LongOrfs" -t transcripts_filt.fa
+"${TD1_DIR}/TransDecoder.Predict"  -t transcripts_filt.fa
 
-LOCAL_GFF=${OUTDIR}/transcripts.fa.transdecoder.gff3
+LOCAL_GFF=${OUTDIR}/transcripts_filt.fa.transdecoder.gff3
 test -s "${LOCAL_GFF}" || { echo "TD1 produced no GFF3" >&2; exit 3; }
 
 python "${PROJDIR}/scripts/local_orfs_to_genomic.py" \
     --local-gff     "${LOCAL_GFF}" \
     --stringtie-gtf "${STRINGTIE}" \
     --out-gtf       "${OUTDIR}/orfs.gtf" \
-    --source        transdecoder
+    --source        transdecoder1
 
 echo "[$(date -Iseconds)] done -> ${OUTDIR}/orfs.gtf"

@@ -312,12 +312,11 @@ def compute_species_upper_bound(
     transcript_S = 100.0 * len(recoverable_tids) / max(1, n_tx)
 
     # ── locus ───────────────────────────────────────────────────────────────
-    # Group ref transcripts into loci by (contig, strand, gid). A ref locus
-    # is counted as recoverable iff at least ONE of its transcripts has a
-    # full-CDS-chain subseq match against some StringTie transcript (i.e.,
-    # is in ``recoverable_tids``). Span-only overlap is intentionally not
-    # enough: an ORF finder can only reproduce a CDS chain that the
-    # StringTie transcript's exon chain actually contains.
+    # gffcompare locus_S = fraction of reference loci whose span is overlapped
+    # by at least one StringTie transcript span on the same contig+strand.
+    # This mirrors gffcompare's span-based locus grouping, which is more
+    # permissive than the exact-chain subseq check used for transcript_S.
+    span_index = per_strand_span_index(st_by_tid)
     locus_map: dict[tuple[str, str, str], list[str]] = defaultdict(list)
     for tid, rec in ref_by_tid.items():
         if not rec["exons"]:
@@ -325,8 +324,17 @@ def compute_species_upper_bound(
         key = (rec["contig"], rec["strand"], rec["gid"])
         locus_map[key].append(tid)
     n_loci = len(locus_map)
-    hit_loci = sum(1 for tids in locus_map.values()
-                   if any(t in recoverable_tids for t in tids))
+    hit_loci = 0
+    for (contig, strand, _), tids in locus_map.items():
+        cs = (contig, strand)
+        merged_spans = span_index.get(cs, [])
+        all_exons = [e for t in tids for e in ref_by_tid[t]["exons"]]
+        if not all_exons:
+            continue
+        locus_s = min(e[0] for e in all_exons)
+        locus_e = max(e[1] for e in all_exons)
+        if bp_covered([(locus_s, locus_e)], merged_spans) > 0:
+            hit_loci += 1
     locus_S = 100.0 * hit_loci / max(1, n_loci)
 
     return {"base_S": base_S, "exon_S": exon_S,

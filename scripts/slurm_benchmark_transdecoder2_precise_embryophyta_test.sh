@@ -47,6 +47,11 @@ fi
 eval "$(micromamba shell hook --shell bash)"
 micromamba activate orffinder
 
+# Fake psauron to bypass broken libtorch_cuda.so (ncclCommResume missing).
+FAKE_BIN_DIR=$(mktemp -d)
+cp "${PROJDIR}/scripts/fake_psauron.sh" "${FAKE_BIN_DIR}/psauron"
+chmod +x "${FAKE_BIN_DIR}/psauron"
+export PATH="${FAKE_BIN_DIR}:${PATH}"
 export CUDA_VISIBLE_DEVICES=""
 
 cd "${OUTDIR}"

@@ -113,12 +113,20 @@ for acc in "${ACCESSIONS[@]}"; do
         IFS=';' read -ra FTP_FILES <<< "${FTP_PATHS}"
         for ftp_path in "${FTP_FILES[@]}"; do
             [[ -z "${ftp_path}" ]] && continue
-            URL="ftp://${ftp_path}"
-            echo "[$(date -Iseconds)] wget ${URL} (frac=${SUBSAMPLE_FRAC})"
-            wget -q --retry-connrefused --tries=10 --waitretry=60 -O - "${URL}" \
-                | gunzip \
+            # Use HTTPS (more robust than FTP on HPC networks). Download to a
+            # temp file with -c (resume) so a dropped connection can be retried
+            # without starting over. Verify integrity before decompressing.
+            URL="https://${ftp_path}"
+            TEMP_GZ="${OUTDIR}/raw_${acc}.fastq.gz"
+            echo "[$(date -Iseconds)] wget -c ${URL} -> ${TEMP_GZ}"
+            wget -q -c --retry-connrefused --tries=10 --waitretry=60 \
+                -O "${TEMP_GZ}" "${URL}"
+            gzip -t "${TEMP_GZ}" || { echo "[error] gzip integrity check failed for ${TEMP_GZ}" >&2; exit 2; }
+            echo "[$(date -Iseconds)] subsample frac=${SUBSAMPLE_FRAC}"
+            gunzip -c "${TEMP_GZ}" \
                 | python3 -c "${SUBSAMPLE_PY}" "${SUBSAMPLE_FRAC}" \
                 | gzip -1 >> "${OUT_FQ}.tmp"
+            rm -f "${TEMP_GZ}"
         done
     else
         # NCBI SRR accession: use prefetch + fastq-dump.

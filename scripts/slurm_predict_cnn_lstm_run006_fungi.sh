@@ -5,13 +5,13 @@
 #SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
 #SBATCH --time=04:00:00
-#SBATCH --output=/home/gabriell/tiberius_orf_finder/logs/predict_run006_fungi_%j.out
-#SBATCH --error=/home/gabriell/tiberius_orf_finder/logs/predict_run006_fungi_%j.err
+#SBATCH --output=/projects/AI-GUSTUS/tiberius_orf_finder/logs/predict_run006_fungi_%j.out
+#SBATCH --error=/projects/AI-GUSTUS/tiberius_orf_finder/logs/predict_run006_fungi_%j.err
 
 # Usage:  sbatch scripts/slurm_predict_cnn_lstm_run006_fungi.sh <epoch_N>
 set -euo pipefail
 
-PROJDIR=/home/gabriell/tiberius_orf_finder
+PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 CLADE=fungi
 EPOCH="${1:?usage: $0 <epoch_int>}"
 

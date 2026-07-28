@@ -1,30 +1,30 @@
 #!/bin/bash
-# Run TransDecoder2 (--precise) on the 7 embryophyta test species.
-# Mirrors slurm_benchmark_transdecoder2_precise_vertebrates_test.sh.
+# Run TransDecoder2 (default settings) on the 7 fungi test species.
+# Mirrors slurm_benchmark_transdecoder2_embryophyta_test.sh.
 #
-#SBATCH --job-name=td2p_emb
+#SBATCH --job-name=td2_fun
 #SBATCH --partition=snowball,pinky,batch
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=48:00:00
 #SBATCH --array=0-6
-#SBATCH --output=/projects/AI-GUSTUS/tiberius_orf_finder/logs/td2p_emb_%A_%a.out
-#SBATCH --error=/projects/AI-GUSTUS/tiberius_orf_finder/logs/td2p_emb_%A_%a.err
+#SBATCH --output=/projects/AI-GUSTUS/tiberius_orf_finder/logs/td2_fun_%A_%a.out
+#SBATCH --error=/projects/AI-GUSTUS/tiberius_orf_finder/logs/td2_fun_%A_%a.err
 
 set -euo pipefail
 
 PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
-TESTDIR=${PROJDIR}/results/training_embryophyta_test_v2
-TOOL=transdecoder2_precise
+TESTDIR=${PROJDIR}/results/fungi_test
+TOOL=transdecoder2
 
 declare -a SPECIES=(
-    "Arabidopsis_thaliana"
-    "Brachypodium_distachyon"
-    "Eschscholzia_californica"
-    "Freycinetia_multiflora"
-    "Medicago_truncatula"
-    "Mimulus_guttatus"
-    "Urochloa_brizantha"
+    "Agaricus_bisporus"
+    "Aspergillus_fumigatus"
+    "Cryphonectria_parasitica"
+    "Parastagonospora_nodorum"
+    "Puccinia_striiformis"
+    "Punctularia_strigosozonata"
+    "Tilletiopsis_washingtonensis"
 )
 species=${SPECIES[$SLURM_ARRAY_TASK_ID]}
 
@@ -55,7 +55,7 @@ export PATH="${FAKE_BIN_DIR}:${PATH}"
 export CUDA_VISIBLE_DEVICES=""
 
 cd "${OUTDIR}"
-echo "[$(date -Iseconds)] host=$(hostname) species=${species} variant=precise"
+echo "[$(date -Iseconds)] host=$(hostname) species=${species} variant=default"
 
 SHARED_FA=${TESTDIR}/${species}/benchmark_orf_tools/transcripts.fa
 if [[ ! -s "${SHARED_FA}" ]]; then
@@ -87,7 +87,7 @@ TD2_WORKDIR=${OUTDIR}/td2_workdir
 rm -rf "${TD2_WORKDIR}"
 
 TD2.LongOrfs -t transcripts_clean.fa -O "${TD2_WORKDIR}" -@ "${SLURM_CPUS_PER_TASK}"
-TD2.Predict  -t transcripts_clean.fa -O "${TD2_WORKDIR}" --precise --verbose
+TD2.Predict  -t transcripts_clean.fa -O "${TD2_WORKDIR}" --verbose
 
 LOCAL_GFF=${OUTDIR}/transcripts_clean.fa.TD2.gff3
 if [[ ! -s "${LOCAL_GFF}" && -s "${TD2_WORKDIR}/transcripts_clean.fa.TD2.gff3" ]]; then
@@ -99,6 +99,6 @@ python "${PROJDIR}/scripts/local_orfs_to_genomic.py" \
     --local-gff     "${LOCAL_GFF}" \
     --stringtie-gtf "${STRINGTIE}" \
     --out-gtf       "${OUTDIR}/orfs.gtf" \
-    --source        td2_precise
+    --source        td2
 
 echo "[$(date -Iseconds)] done -> ${OUTDIR}/orfs.gtf"

@@ -5,12 +5,12 @@
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
 #SBATCH --time=72:00:00
-#SBATCH --output=/home/gabriell/tiberius_orf_finder/logs/train_run006_fungi_%j.out
-#SBATCH --error=/home/gabriell/tiberius_orf_finder/logs/train_run006_fungi_%j.err
+#SBATCH --output=/projects/AI-GUSTUS/tiberius_orf_finder/logs/train_run006_fungi_%j.out
+#SBATCH --error=/projects/AI-GUSTUS/tiberius_orf_finder/logs/train_run006_fungi_%j.err
 
 set -euo pipefail
 
-PROJDIR=/home/gabriell/tiberius_orf_finder
+PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 CLADE=fungi
 
 mkdir -p "${PROJDIR}/logs"
@@ -20,7 +20,7 @@ eval "$(micromamba shell hook --shell bash)"
 micromamba activate orffinder
 
 python "${PROJDIR}/scripts/train.py" \
-    --train-manifest "${PROJDIR}/results/${CLADE}_training/tfrecord_manifest_available.tsv" \
-    --val-manifest   "${PROJDIR}/results/${CLADE}_validation/tfrecord_manifest_available.tsv" \
+    --train-manifest "${PROJDIR}/results/fungi_train_manifest.tsv" \
+    --val-manifest   "${PROJDIR}/results/fungi_val_manifest.tsv" \
     --config         "${PROJDIR}/configs/cnn_lstm_run006.yaml" \
     --outdir         "${PROJDIR}/results/models/cnn_lstm_run006_${CLADE}"

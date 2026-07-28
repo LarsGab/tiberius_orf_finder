@@ -64,19 +64,36 @@ if [[ ! -s "${SHARED_FA}" ]]; then
     mkdir -p "$(dirname "${SHARED_FA}")"
     gffread -w "${SHARED_FA}" -g "${GENOME}" "${STRINGTIE}"
 fi
-ln -sf "${SHARED_FA}" transcripts.fa
-n_tx=$(grep -c '^>' transcripts.fa)
-echo "  transcripts.fa: ${n_tx} records"
+# Drop empty seqs, uppercase, replace non-ACGTN with N.
+# TD2.LongOrfs crashes on IUPAC ambiguity codes in some gffread outputs.
+python3 -c "
+import re, sys
+hdr = None; seq = []
+for line in open(sys.argv[1]):
+    line = line.rstrip()
+    if line.startswith('>'):
+        if hdr and seq:
+            s = re.sub(r'[^ACGTN]', 'N', ''.join(seq).upper())
+            if s: print(hdr); print(s)
+        hdr = line; seq = []
+    else:
+        seq.append(line)
+if hdr and seq:
+    s = re.sub(r'[^ACGTN]', 'N', ''.join(seq).upper())
+    if s: print(hdr); print(s)
+" "${SHARED_FA}" > transcripts_clean.fa
+n_tx=$(grep -c '^>' transcripts_clean.fa)
+echo "  transcripts_clean.fa: ${n_tx} records (sanitized)"
 
 TD2_WORKDIR=${OUTDIR}/td2_workdir
 rm -rf "${TD2_WORKDIR}"
 
-TD2.LongOrfs -t transcripts.fa -O "${TD2_WORKDIR}" -@ "${SLURM_CPUS_PER_TASK}"
-TD2.Predict  -t transcripts.fa -O "${TD2_WORKDIR}" --verbose
+TD2.LongOrfs -t transcripts_clean.fa -O "${TD2_WORKDIR}" -@ "${SLURM_CPUS_PER_TASK}"
+TD2.Predict  -t transcripts_clean.fa -O "${TD2_WORKDIR}" --verbose
 
-LOCAL_GFF=${OUTDIR}/transcripts.fa.TD2.gff3
-if [[ ! -s "${LOCAL_GFF}" && -s "${TD2_WORKDIR}/transcripts.fa.TD2.gff3" ]]; then
-    LOCAL_GFF=${TD2_WORKDIR}/transcripts.fa.TD2.gff3
+LOCAL_GFF=${OUTDIR}/transcripts_clean.fa.TD2.gff3
+if [[ ! -s "${LOCAL_GFF}" && -s "${TD2_WORKDIR}/transcripts_clean.fa.TD2.gff3" ]]; then
+    LOCAL_GFF=${TD2_WORKDIR}/transcripts_clean.fa.TD2.gff3
 fi
 test -s "${LOCAL_GFF}" || { echo "TD2 produced no GFF3" >&2; exit 3; }
 

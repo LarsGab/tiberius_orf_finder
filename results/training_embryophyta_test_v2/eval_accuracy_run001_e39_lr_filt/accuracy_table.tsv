@@ -1,0 +1,17 @@
+species	gene_set	gene_S	gene_P	gene_F1	transcript_S	transcript_P	transcript_F1	exon_S	exon_P	exon_F1
+Arabidopsis_thaliana	orf_prediction	50.3	92.0	65.04	36.9	75.5	49.57	64.3	94.4	76.5
+Arabidopsis_thaliana	tiberius	77.7	85.7	81.5	53.7	85.7	66.03	82.4	95.8	88.6
+Arabidopsis_thaliana	merged	80.3	88.0	83.97	58.3	74.4	65.37	84.3	92.2	88.07
+Arabidopsis_thaliana	braker3	78.6	83.9	81.16	55.9	77.9	65.09	80.9	94.7	87.26
+Eschscholzia_californica	orf_prediction	27.2	78.6	40.41	20.7	65.6	31.47	44.8	93.1	60.49
+Eschscholzia_californica	tiberius	73.5	75.4	74.44	51.9	75.4	61.48	83.4	91.6	87.31
+Eschscholzia_californica	merged	76.4	77.9	77.14	56.3	67.4	61.35	85.1	89.0	87.01
+Eschscholzia_californica	braker3	70.0	85.6	77.02	50.9	79.2	61.97	79.1	94.6	86.16
+Medicago_truncatula	orf_prediction	36.9	73.9	49.22	31.9	60.9	41.87	50.7	83.1	62.98
+Medicago_truncatula	tiberius	71.3	71.1	71.2	60.5	71.1	65.37	84.8	89.5	87.09
+Medicago_truncatula	merged	74.3	70.4	72.3	64.3	59.4	61.75	86.3	81.4	83.78
+Medicago_truncatula	braker3	73.0	79.2	75.97	64.1	73.6	68.52	82.2	92.1	86.87
+Urochloa_brizantha	orf_prediction	44.9	93.8	60.73	40.5	91.0	56.05	60.8	97.7	74.95
+Urochloa_brizantha	tiberius	67.7	60.2	63.73	59.3	60.2	59.75	83.2	84.3	83.75
+Urochloa_brizantha	merged	74.6	67.4	70.82	67.2	61.3	64.11	86.6	84.0	85.28
+Urochloa_brizantha	braker3	67.7	74.4	70.89	60.5	69.5	64.69	77.6	89.9	83.3

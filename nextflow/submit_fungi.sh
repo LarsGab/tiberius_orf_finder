@@ -10,8 +10,8 @@
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=4G
 #SBATCH --time=72:00:00
-#SBATCH --output=/home/gabriell/tiberius_orf_finder/logs/tib_fungi_%j.out
-#SBATCH --error=/home/gabriell/tiberius_orf_finder/logs/tib_fungi_%j.err
+#SBATCH --output=/projects/AI-GUSTUS/tiberius_orf_finder/logs/tib_fungi_%j.out
+#SBATCH --error=/projects/AI-GUSTUS/tiberius_orf_finder/logs/tib_fungi_%j.err
 
 set -euo pipefail
 SPLIT="${1:-}"
@@ -20,7 +20,7 @@ case "$SPLIT" in
     *) echo "usage: $0 training|validation|test" >&2; exit 2 ;;
 esac
 
-PROJDIR=/home/gabriell/tiberius_orf_finder
+PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 RUNDIR=${PROJDIR}/runs/fungi_${SPLIT}
 mkdir -p "${PROJDIR}/logs" "${RUNDIR}"
 cd "${RUNDIR}"   # isolated work/ + .nextflow/ per (clade,split) – avoids LOCK contention

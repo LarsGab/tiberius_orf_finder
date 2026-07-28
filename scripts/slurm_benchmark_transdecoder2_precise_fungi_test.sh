@@ -1,30 +1,30 @@
 #!/bin/bash
-# Run TransDecoder2 (--precise) on the 7 embryophyta test species.
-# Mirrors slurm_benchmark_transdecoder2_precise_vertebrates_test.sh.
+# Run TransDecoder2 (--precise) on the 7 fungi test species.
+# Mirrors slurm_benchmark_transdecoder2_precise_embryophyta_test.sh.
 #
-#SBATCH --job-name=td2p_emb
+#SBATCH --job-name=td2p_fun
 #SBATCH --partition=snowball,pinky,batch
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 #SBATCH --time=48:00:00
 #SBATCH --array=0-6
-#SBATCH --output=/projects/AI-GUSTUS/tiberius_orf_finder/logs/td2p_emb_%A_%a.out
-#SBATCH --error=/projects/AI-GUSTUS/tiberius_orf_finder/logs/td2p_emb_%A_%a.err
+#SBATCH --output=/projects/AI-GUSTUS/tiberius_orf_finder/logs/td2p_fun_%A_%a.out
+#SBATCH --error=/projects/AI-GUSTUS/tiberius_orf_finder/logs/td2p_fun_%A_%a.err
 
 set -euo pipefail
 
 PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
-TESTDIR=${PROJDIR}/results/training_embryophyta_test_v2
+TESTDIR=${PROJDIR}/results/fungi_test
 TOOL=transdecoder2_precise
 
 declare -a SPECIES=(
-    "Arabidopsis_thaliana"
-    "Brachypodium_distachyon"
-    "Eschscholzia_californica"
-    "Freycinetia_multiflora"
-    "Medicago_truncatula"
-    "Mimulus_guttatus"
-    "Urochloa_brizantha"
+    "Agaricus_bisporus"
+    "Aspergillus_fumigatus"
+    "Cryphonectria_parasitica"
+    "Parastagonospora_nodorum"
+    "Puccinia_striiformis"
+    "Punctularia_strigosozonata"
+    "Tilletiopsis_washingtonensis"
 )
 species=${SPECIES[$SLURM_ARRAY_TASK_ID]}
 

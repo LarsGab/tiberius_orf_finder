@@ -30,6 +30,7 @@ from matplotlib.lines import Line2D
 
 TOOL_LABELS = {
     "tiberius":              "Tiberius (subseq-filt)",
+    "tiberius_protein":      "Tiberius + protein filter",
     "transdecoder1":         "TransDecoder v1",
     "transdecoder2":         "TransDecoder2",
     "transdecoder2_precise": "TransDecoder2 (--precise)",
@@ -38,6 +39,7 @@ TOOL_LABELS = {
 TOOL_ORDER = list(TOOL_LABELS.keys())
 TOOL_COLORS = {
     "tiberius":              "#e41a1c",   # red
+    "tiberius_protein":      "#a50f15",   # dark red
     "transdecoder1":         "#377eb8",   # blue
     "transdecoder2":         "#4daf4a",   # green
     "transdecoder2_precise": "#984ea3",   # purple
@@ -45,6 +47,7 @@ TOOL_COLORS = {
 }
 TOOL_MARKERS = {
     "tiberius":              "o",
+    "tiberius_protein":      "*",
     "transdecoder1":         "s",
     "transdecoder2":         "^",
     "transdecoder2_precise": "D",

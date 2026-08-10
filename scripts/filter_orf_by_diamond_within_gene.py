@@ -51,6 +51,8 @@ from pathlib import Path
 
 _TRANSCRIPT_ID_RE = re.compile(r'transcript_id "([^"]+)"')
 _GENE_ID_RE       = re.compile(r'gene_id "([^"]+)"')
+_GFF3_ID_RE       = re.compile(r'(?:^|;)ID=([^;]+)')
+_GFF3_PARENT_RE   = re.compile(r'(?:^|;)Parent=([^;]+)')
 
 # Diamond outfmt: 14 cols, indices below match _DIAMOND_FMT used by sister script.
 _DIAMOND_FMT = (
@@ -141,6 +143,21 @@ def transcripts_with_hit(diamond_tsv: Path, evalue_max: float,
     return keep
 
 
+def _is_gff3(gtf: Path) -> bool:
+    """Return True if the file uses GFF3 attribute syntax (ID= / Parent=)."""
+    for line in gtf.read_text().splitlines():
+        if not line or line.startswith("#"):
+            continue
+        if _TRANSCRIPT_ID_RE.search(line):
+            return False
+        cols = line.split("\t")
+        if len(cols) >= 9:
+            attrs = cols[8]
+            if "ID=" in attrs or "Parent=" in attrs:
+                return True
+    return False
+
+
 def _fallback_gene_id(tid: str) -> str:
     """StringTie tids look like STRG.G.I; strip the last '.I' to recover gene."""
     parts = tid.rsplit(".", 1)
@@ -150,13 +167,13 @@ def _fallback_gene_id(tid: str) -> str:
 def read_gtf_gene_map(gtf: Path) -> tuple[dict[str, str], dict[str, list[str]]]:
     """Return (tid_to_gid, gid_to_tids).
 
-    Uses the GTF's gene_id column when it looks distinct from transcript_id
-    (proper StringTie-inherited attributes); otherwise falls back to
-    ``STRG.G.I → STRG.G`` derivation from the transcript_id. Handles the
-    ORF-finder output where annotate.py sets ``gene_id == transcript_id``,
-    which would otherwise leave every gene with a single isoform and defeat
-    the within-gene pruning.
+    Handles both GTF (transcript_id / gene_id quoted attributes) and GFF3
+    (ID= / Parent= attributes on mRNA/transcript features).
+    For GTF: uses gene_id when distinct from transcript_id, else derives gene
+    from transcript_id via _fallback_gene_id.
     """
+    if _is_gff3(gtf):
+        return _read_gff3_gene_map(gtf)
     tid_to_gid: dict[str, str] = {}
     for line in gtf.read_text().splitlines():
         if not line or line.startswith("#"):
@@ -169,6 +186,31 @@ def read_gtf_gene_map(gtf: Path) -> tuple[dict[str, str], dict[str, list[str]]]:
         gid = gm.group(1) if gm else None
         if not gid or gid == tid:
             gid = _fallback_gene_id(tid)
+        tid_to_gid.setdefault(tid, gid)
+    gid_to_tids: dict[str, list[str]] = defaultdict(list)
+    for tid, gid in tid_to_gid.items():
+        gid_to_tids[gid].append(tid)
+    return tid_to_gid, gid_to_tids
+
+
+def _read_gff3_gene_map(gtf: Path) -> tuple[dict[str, str], dict[str, list[str]]]:
+    """GFF3 variant: parse mRNA/transcript features for ID= and Parent=."""
+    tid_to_gid: dict[str, str] = {}
+    for line in gtf.read_text().splitlines():
+        if not line or line.startswith("#"):
+            continue
+        cols = line.split("\t")
+        if len(cols) < 9:
+            continue
+        if cols[2] not in ("mRNA", "transcript"):
+            continue
+        attrs = cols[8]
+        id_m  = _GFF3_ID_RE.search(attrs)
+        par_m = _GFF3_PARENT_RE.search(attrs)
+        if not id_m:
+            continue
+        tid = id_m.group(1).strip()
+        gid = par_m.group(1).strip() if par_m else _fallback_gene_id(tid)
         tid_to_gid.setdefault(tid, gid)
     gid_to_tids: dict[str, list[str]] = defaultdict(list)
     for tid, gid in tid_to_gid.items():
@@ -203,7 +245,8 @@ def prune_within_gene(
     return kept, dropped
 
 
-def write_filtered_gtf(src: Path, dst: Path, kept: set[str]) -> tuple[int, int]:
+def write_filtered_gtf(src: Path, dst: Path, kept: set[str],
+                       gff3: bool = False) -> tuple[int, int]:
     n_written = n_total = 0
     with src.open() as fin, dst.open("w") as fout:
         for line in fin:
@@ -211,10 +254,27 @@ def write_filtered_gtf(src: Path, dst: Path, kept: set[str]) -> tuple[int, int]:
                 fout.write(line)
                 continue
             n_total += 1
-            m = _TRANSCRIPT_ID_RE.search(line)
-            if m and m.group(1) in kept:
-                fout.write(line)
-                n_written += 1
+            if gff3:
+                cols = line.split("\t")
+                if len(cols) < 9:
+                    continue
+                attrs = cols[8]
+                feat  = cols[2]
+                if feat in ("mRNA", "transcript"):
+                    m = _GFF3_ID_RE.search(attrs)
+                    if m and m.group(1).strip() in kept:
+                        fout.write(line)
+                        n_written += 1
+                else:
+                    m = _GFF3_PARENT_RE.search(attrs)
+                    if m and m.group(1).strip() in kept:
+                        fout.write(line)
+                        n_written += 1
+            else:
+                m = _TRANSCRIPT_ID_RE.search(line)
+                if m and m.group(1) in kept:
+                    fout.write(line)
+                    n_written += 1
     return n_written, n_total
 
 
@@ -264,10 +324,11 @@ def main(argv=None):
         pident_min=args.pident_min,
         bitscore_min=args.bitscore_min,
     )
+    gff3_mode = _is_gff3(args.orfs_gtf)
     tid_to_gid, gid_to_tids = read_gtf_gene_map(args.orfs_gtf)
 
     if not tid_to_gid:
-        # Fall back to STRG.G.I → STRG.G derivation from tids present in GTF.
+        # Fall back to derivation from tids present in GTF (GTF format only).
         tids: set[str] = set()
         for line in args.orfs_gtf.read_text().splitlines():
             m = _TRANSCRIPT_ID_RE.search(line)
@@ -283,7 +344,7 @@ def main(argv=None):
 
     filt_gtf = args.out_dir / "orfs.filtered_soft_protein.gtf"
     report   = args.out_dir / "dropped_soft_protein.tsv"
-    n_lines, n_total = write_filtered_gtf(args.orfs_gtf, filt_gtf, kept)
+    n_lines, n_total = write_filtered_gtf(args.orfs_gtf, filt_gtf, kept, gff3=gff3_mode)
 
     with report.open("w") as fh:
         fh.write("dropped_tid\tkeeper_tid\treason\n")

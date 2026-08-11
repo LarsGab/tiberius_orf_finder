@@ -3,7 +3,7 @@
 # Detects the highest epoch_N.weights.h5 at job-start time automatically.
 #
 #SBATCH --job-name=train_r006_asp_pen
-#SBATCH --partition=vision,vision-fast
+#SBATCH --partition=storm,vision,vision-fast
 #SBATCH --gres=gpu:1
 #SBATCH --mem=64G
 #SBATCH --cpus-per-task=8
@@ -19,7 +19,7 @@ OUTDIR=${PROJDIR}/results/models/cnn_lstm_run006_fungi_asp_pen
 mkdir -p "${PROJDIR}/logs" "${OUTDIR}"
 
 eval "$(micromamba shell hook --shell bash)"
-micromamba activate orffinder
+micromamba activate gpu
 
 INIT_WEIGHTS=$(ls "${OUTDIR}"/epoch_*.weights.h5 2>/dev/null | sort -V | tail -1)
 [[ -n "${INIT_WEIGHTS}" ]] || { echo "no epoch checkpoints in ${OUTDIR}" >&2; exit 2; }

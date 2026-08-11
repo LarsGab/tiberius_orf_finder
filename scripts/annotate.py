@@ -162,6 +162,11 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                          "many nt of the transcript 3' end. Same idea as "
                          "--min-utr-5 for truncated 3' assemblies. "
                          "0 disables.")
+    ap.add_argument("--partial-out", type=Path, default=None,
+                    help="If set, also write ORFs that begin with ATG but "
+                         "have no stop codon within the transcript (3'-end "
+                         "truncated) to this GTF file. These can be "
+                         "recovered by fix_stop_by_miniprot.py.")
     return ap.parse_args(argv)
 
 
@@ -448,6 +453,7 @@ def _make_predict_func(
     hmm,
     chunk_len: int,
     batch_size: int,
+    label_store: "dict[str, np.ndarray] | None" = None,
 ) -> Callable:
     """Build a ``predict_func`` for ``b2m.tools.annotate.annotate_genome``.
 
@@ -489,6 +495,19 @@ def _make_predict_func(
                 hmm, logits_b, nuc_one_hot[sl], pad_mask=pad_mask[sl],
             )
             labels_out[sl] = labels_b[:, :T]
+
+        # Capture raw 6-state labels for partial ORF extraction.
+        # Iterate the fasta batch to get per-sequence chunk counts and names.
+        # Use "only update if more chunks" so that short reprediction calls
+        # (1 boundary chunk) never overwrite the full-transcript prediction.
+        if label_store is not None:
+            row = 0
+            for seq in fasta:
+                n = seq.N
+                prev = label_store.get(seq.name)
+                if prev is None or n > prev.shape[0]:
+                    label_store[seq.name] = labels_out[row:row + n].copy()
+                row += n
 
         return _TIB_TO_B2M[labels_out].astype(np.int32), None
 
@@ -624,7 +643,12 @@ def main(argv: list[str] | None = None) -> int:
     # 5. b2m predict / repredict adapters. The same function is used for
     # both — repredict only differs in being called on shorter chunks
     # centred on chunk boundaries, which the adapter handles identically.
-    predict_func = _make_predict_func(model, hmm, chunk_len, args.batch_size)
+    label_store: "dict[str, np.ndarray] | None" = (
+        {} if args.partial_out is not None else None
+    )
+    predict_func = _make_predict_func(
+        model, hmm, chunk_len, args.batch_size, label_store=label_store,
+    )
     repredict_func = predict_func
 
     # 6. annotate transcripts as a "genome" and project each detected
@@ -791,6 +815,35 @@ def main(argv: list[str] | None = None) -> int:
             f"(clip_policy={'on' if clip_in_pad else 'off'})",
             flush=True,
         )
+
+    # Partial ORF emission: extract 3'-truncated ORFs from captured label arrays.
+    if args.partial_out is not None and label_store:
+        from tiberius_orf.data.gtf_writer import extract_partial_orfs
+        n_partial = 0
+        with open(args.partial_out, "w") as fh:
+            for tid in sorted(label_store):
+                if tid not in transcripts:
+                    continue
+                tx = transcripts[tid]
+                chunk_lbl = label_store[tid]  # (n_chunks, T)
+                flat_lbl = chunk_lbl.ravel()
+                # Trim to actual padded sequence length, then strip pad prefix.
+                real_len = tx.length + pad_k
+                flat_lbl = flat_lbl[:real_len]
+                if pad_k > 0:
+                    flat_lbl = flat_lbl[pad_k:]
+                for orf_start, orf_end in extract_partial_orfs(flat_lbl):
+                    if args.min_coding_length > 0 and (orf_end - orf_start) < args.min_coding_length:
+                        continue
+                    if args.min_utr_5 > 0 and orf_start < args.min_utr_5:
+                        continue
+                    lines = _project_tx_intervals_to_genomic(
+                        tid, [(orf_start, orf_end)], tx, "tiberius_orf",
+                    )
+                    for line in lines:
+                        fh.write(line + "\n")
+                    n_partial += 1
+        print(f"Partial ORFs: {n_partial} -> {args.partial_out}", flush=True)
 
     if cleanup:
         Path(intermediate_gtf).unlink(missing_ok=True)

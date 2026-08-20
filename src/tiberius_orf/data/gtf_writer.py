@@ -24,6 +24,47 @@ from .label_transcripts import StringTieTranscript
 # label codes (re-imported to keep this module standalone)
 IR, START, E1, E2, E0, STOP = 0, 1, 2, 3, 4, 5
 
+# LORF classification constants (GeneMark-ETP-style 5'-end categories)
+LORF_UPSTOP = "LORF_UPSTOP"    # upstream in-frame stop confirms this ATG is the LORF
+sORF_UPSTOP = "sORF_UPSTOP"    # upstream stop exists but a longer ORF starts before us
+upLORF = "upLORF"               # no upstream stop; upstream ATG exists → longer ORF present
+LORF_NOUPSTOP = "LORF_NOUPSTOP"  # no upstream stop, no upstream ATG → likely 5'-partial
+
+_STOP_CODONS = frozenset({"TAA", "TAG", "TGA"})
+
+
+def classify_lorf(tx_seq: str, orf_tx_start: int) -> str:
+    """Classify the 5' context of an ORF by scanning upstream in-frame for stop codons.
+
+    Walks upstream from *orf_tx_start* in steps of 3 (same reading frame as the
+    predicted ATG).  Returns one of the four LORF class constants defined in
+    this module.
+
+    LORF_UPSTOP   – in-frame stop upstream; no ATG between it and our ATG.
+    sORF_UPSTOP   – in-frame stop upstream; but a farther ATG exists between
+                    it and our ATG (our ORF is not the longest after that stop).
+    upLORF        – no upstream stop; an in-frame ATG exists upstream
+                    (a longer ORF is present in the same frame).
+    LORF_NOUPSTOP – no upstream stop and no upstream ATG; transcript is likely
+                    5'-incomplete.
+    """
+    p = orf_tx_start
+    upstream_stop: int | None = None
+    for pos in range(p - 3, -1, -3):
+        if tx_seq[pos : pos + 3].upper() in _STOP_CODONS:
+            upstream_stop = pos
+            break
+    if upstream_stop is not None:
+        for pos in range(upstream_stop + 3, p, 3):
+            if tx_seq[pos : pos + 3].upper() == "ATG":
+                return sORF_UPSTOP
+        return LORF_UPSTOP
+    else:
+        for pos in range(p % 3, p, 3):
+            if tx_seq[pos : pos + 3].upper() == "ATG":
+                return upLORF
+        return LORF_NOUPSTOP
+
 
 def extract_orfs(labels: np.ndarray) -> list[tuple[int, int]]:
     """Return [(tx_start, tx_end), ...] half-open 0-based intervals for each
@@ -50,6 +91,54 @@ def extract_orfs(labels: np.ndarray) -> list[tuple[int, int]]:
         else:
             i = j   # incomplete ORF, advance past it
     return orfs
+
+
+def extract_partial_orfs(labels: np.ndarray) -> list[tuple[int, int]]:
+    """Return [(tx_start, tx_end), ...] for 3'-truncated ORFs.
+
+    A partial ORF is a run  START (E1|E2|E0)+  that reaches the end of
+    ``labels`` without hitting STOP.  Unlike complete ORFs, ``tx_end``
+    equals the array length (the run simply ends there) and no STOP label
+    is included.  Runs terminated by a second START or an IR state are not
+    returned — those are mid-sequence interruptions, not 3'-end truncations.
+    """
+    orfs: list[tuple[int, int]] = []
+    L = len(labels)
+    i = 0
+    while i < L:
+        if labels[i] != START:
+            i += 1
+            continue
+        j = i + 1
+        while j < L and labels[j] in (E1, E2, E0):
+            j += 1
+        if j >= L and j > i + 1:
+            # Ran off the end with at least one coding state after START
+            orfs.append((i, j))
+        i = j
+    return orfs
+
+
+def extract_5prime_partial_orfs(labels: np.ndarray) -> list[tuple[int, int]]:
+    """Return [(0, tx_end)] for a 5'-truncated ORF at the transcript start.
+
+    A 5'-partial ORF begins at position 0 with coding states (E1|E2|E0) —
+    no preceding START — and terminates with a STOP.  This represents a CDS
+    whose ATG is upstream of the assembled transcript.
+
+    Returns at most one entry; an empty list if position 0 is not a coding
+    state or if no STOP is found before the run ends.
+    """
+    CODING = frozenset({E1, E2, E0})
+    L = len(labels)
+    if L == 0 or labels[0] not in CODING:
+        return []
+    j = 0
+    while j < L and labels[j] in CODING:
+        j += 1
+    if j < L and labels[j] == STOP:
+        return [(0, j + 1)]
+    return []
 
 
 def tx_interval_to_genomic_segments(

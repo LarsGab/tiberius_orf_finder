@@ -11,7 +11,7 @@
 #   ${RESULTS_DIR}/<species>/score_tiberius_epoch_74/scores.tsv
 #
 #SBATCH --job-name=score_tib_vert
-#SBATCH --partition=vision-fast
+#SBATCH --partition=vision-fast,storm
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
@@ -28,7 +28,7 @@ BENCH=/home/gabriell/tiberius_benchmarking
 
 WEIGHTS=${PROJDIR}/results/models/cnn_lstm_vertebrates_run006/epoch_74.weights.h5
 CONFIG=${PROJDIR}/configs/cnn_lstm_run006.yaml
-WEIGHTS_TAG=epoch_74
+WEIGHTS_TAG=epoch_74_up500
 
 mkdir -p "${PROJDIR}/logs"
 
@@ -71,7 +71,7 @@ fi
 mkdir -p "${OUTDIR}"
 
 eval "$(micromamba shell hook --shell bash)"
-micromamba activate orffinder
+micromamba activate gpu
 
 cd "${PROJDIR}"
 
@@ -81,11 +81,12 @@ echo "[$(date -Iseconds)] genome=${GENOME}"
 echo "[$(date -Iseconds)] out=${OUT_TSV}"
 
 python "${PROJDIR}/scripts/score_tiberius.py" \
-    --gtf        "${TIB_GTF}" \
-    --genome     "${GENOME}" \
-    --weights    "${WEIGHTS}" \
-    --config     "${CONFIG}" \
-    --out-tsv    "${OUT_TSV}" \
-    --batch-size 200
+    --gtf         "${TIB_GTF}" \
+    --genome      "${GENOME}" \
+    --weights     "${WEIGHTS}" \
+    --config      "${CONFIG}" \
+    --out-tsv     "${OUT_TSV}" \
+    --batch-size  200 \
+    --upstream-bp 500
 
 echo "[$(date -Iseconds)] done -> ${OUT_TSV}"

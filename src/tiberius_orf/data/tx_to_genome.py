@@ -16,6 +16,7 @@ def project_tx_intervals_to_genomic(
     tx,
     source: str,
     gene_id: str | None = None,
+    lorf_class: str | None = None,
 ) -> list[str]:
     """Project half-open transcript-coord CDS intervals onto the genome.
 
@@ -59,12 +60,13 @@ def project_tx_intervals_to_genomic(
             if cumulative >= orf_tx_end:
                 break
         per_segment.sort()
+        lorf_attr = f' lorf_class "{lorf_class}";' if lorf_class is not None else ""
         for g_lo, g_hi, tx_pos in per_segment:
             phase = (3 - (tx_pos - orf_tx_start) % 3) % 3
             out.append("\t".join([
                 tx.contig, source, "CDS",
                 str(g_lo + 1), str(g_hi),
                 ".", tx.strand, str(phase),
-                f'transcript_id "{tx_id}"; gene_id "{gid}";',
+                f'transcript_id "{tx_id}"; gene_id "{gid}";{lorf_attr}',
             ]))
     return out

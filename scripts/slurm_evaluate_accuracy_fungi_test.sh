@@ -1,10 +1,10 @@
 #!/bin/bash
 # Evaluate fungi ORF predictions against the reference annotation for 7 test
-# species (6 original + Aspergillus fumigatus), alongside TransDecoder2
-# (default and precise).  No Tiberius/BRAKER3 templates yet — add
-# --tib-tmpl / --brk-tmpl once those runs exist.
+# species alongside ab-initio Tiberius, BRAKER3, and their merge.
+# Prediction source: results/fungi_test/<sp>/annotate_run006_e<EPOCH>/orfs.filtered.gtf
 #
 # Usage: EPOCH=<n> sbatch scripts/slurm_evaluate_accuracy_fungi_test.sh
+#   EPOCH defaults to the highest annotate_run006_e* found for Aspergillus_fumigatus.
 #
 #SBATCH --job-name=eval_acc_fun
 #SBATCH --partition=snowball,pinky,batch
@@ -19,7 +19,12 @@ set -euo pipefail
 PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 TESTDIR=${PROJDIR}/results/fungi_test
 
-EPOCH=${EPOCH:-1}
+if [[ -z "${EPOCH:-}" ]]; then
+    EPOCH=$(ls -d "${TESTDIR}"/Aspergillus_fumigatus/annotate_run006_e* 2>/dev/null \
+            | sort -t_ -k4 -n | tail -1 | xargs basename 2>/dev/null \
+            | sed 's/annotate_run006_e//' || true)
+    [[ -n "${EPOCH}" ]] || { echo "cannot determine EPOCH; set it explicitly via EPOCH=<n>" >&2; exit 2; }
+fi
 EVAL_TAG=${EVAL_TAG:-run006_e${EPOCH}}
 OUT_ROOT=${TESTDIR}/eval_accuracy_${EVAL_TAG}
 PRED_DIR=${OUT_ROOT}/preds
@@ -37,7 +42,7 @@ SPECIES=(
 )
 
 for sp in "${SPECIES[@]}"; do
-    src=${PROJDIR}/results/predictions/cnn_lstm_run006_fungi_epoch${EPOCH}/${sp}/prediction.gtf
+    src=${TESTDIR}/${sp}/annotate_run006_e${EPOCH}/orfs.filtered.gtf
     if [[ ! -s "${src}" ]]; then
         echo "[skip preds] ${sp}: missing ${src}"
         continue

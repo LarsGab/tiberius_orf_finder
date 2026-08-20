@@ -6,6 +6,12 @@ from .loss import (
     MaskedAccuracy, MaskedF1Score, all_class_f1_metrics,
     MaskedCCEPlusBoundaryF1,
 )
+from .finetune_head import (
+    FEATURE_COLS,
+    FinetuneConfig,
+    build_finetune_head,
+    load_finetune_head,
+)
 
 __all__ = [
     "build_model",
@@ -18,4 +24,8 @@ __all__ = [
     "MaskedF1Score",
     "all_class_f1_metrics",
     "MaskedCCEPlusBoundaryF1",
+    "FEATURE_COLS",
+    "FinetuneConfig",
+    "build_finetune_head",
+    "load_finetune_head",
 ]

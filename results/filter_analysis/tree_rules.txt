@@ -1,0 +1,46 @@
+|--- support_level__noSupport <= 0.50
+|   |--- cds_length_pct <= 0.09
+|   |   |--- best_norm_bitscore <= 4.78
+|   |   |   |--- best_norm_bitscore <= 3.98
+|   |   |   |   |--- class: 0
+|   |   |   |--- best_norm_bitscore >  3.98
+|   |   |   |   |--- class: 1
+|   |   |--- best_norm_bitscore >  4.78
+|   |   |   |--- frac_introns_supported <= 0.55
+|   |   |   |   |--- class: 1
+|   |   |   |--- frac_introns_supported >  0.55
+|   |   |   |   |--- class: 1
+|   |--- cds_length_pct >  0.09
+|   |   |--- frac_introns_supported <= 0.34
+|   |   |   |--- best_target_coverage <= 0.97
+|   |   |   |   |--- class: 0
+|   |   |   |--- best_target_coverage >  0.97
+|   |   |   |   |--- class: 1
+|   |   |--- frac_introns_supported >  0.34
+|   |   |   |--- protein_extends_5prime_codons <= 124.50
+|   |   |   |   |--- class: 1
+|   |   |   |--- protein_extends_5prime_codons >  124.50
+|   |   |   |   |--- class: 1
+|--- support_level__noSupport >  0.50
+|   |--- best_target_coverage <= 0.95
+|   |   |--- n_exons <= 4.50
+|   |   |   |--- n_overlapping_alignments <= 1.50
+|   |   |   |   |--- class: 0
+|   |   |   |--- n_overlapping_alignments >  1.50
+|   |   |   |   |--- class: 0
+|   |   |--- n_exons >  4.50
+|   |   |   |--- best_target_coverage <= 0.82
+|   |   |   |   |--- class: 0
+|   |   |   |--- best_target_coverage >  0.82
+|   |   |   |   |--- class: 0
+|   |--- best_target_coverage >  0.95
+|   |   |--- cds_length_nt <= 880.50
+|   |   |   |--- best_identity <= 0.99
+|   |   |   |   |--- class: 0
+|   |   |   |--- best_identity >  0.99
+|   |   |   |   |--- class: 1
+|   |   |--- cds_length_nt >  880.50
+|   |   |   |--- protein_extends_5prime_codons <= 10.50
+|   |   |   |   |--- class: 1
+|   |   |   |--- protein_extends_5prime_codons >  10.50
+|   |   |   |   |--- class: 0

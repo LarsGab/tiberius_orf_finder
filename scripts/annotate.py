@@ -167,6 +167,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                          "have no stop codon within the transcript (3'-end "
                          "truncated) to this GTF file. These can be "
                          "recovered by fix_stop_by_miniprot.py.")
+    ap.add_argument("--partial5-out", type=Path, default=None,
+                    help="If set, write 5'-truncated ORFs (coding states at "
+                         "transcript position 0, no predicted ATG) to this "
+                         "GTF file. Recovered by fix_stop_by_miniprot.py "
+                         "--partial5.")
+    ap.add_argument("--lorf-class", action="store_true",
+                    help="Annotate each predicted ORF with its LORF class "
+                         "(LORF_UPSTOP / sORF_UPSTOP / upLORF / "
+                         "LORF_NOUPSTOP) as a GTF attribute. Requires "
+                         "loading transcript sequences into memory. "
+                         "Applies to both complete and partial ORFs.")
     return ap.parse_args(argv)
 
 
@@ -192,6 +203,26 @@ _RC_TABLE = str.maketrans("ACGTNacgtn", "TGCANtgcan")
 
 def _rev_comp(seq: str) -> str:
     return seq.translate(_RC_TABLE)[::-1]
+
+
+def _load_tx_seqs(fa_path: Path) -> dict[str, str]:
+    """Load a FASTA file into {name: sequence} (sequence in uppercase)."""
+    seqs: dict[str, str] = {}
+    name: str | None = None
+    buf: list[str] = []
+    with open(fa_path) as fh:
+        for line in fh:
+            line = line.rstrip()
+            if line.startswith(">"):
+                if name is not None:
+                    seqs[name] = "".join(buf).upper()
+                name = line[1:].split()[0]
+                buf = []
+            else:
+                buf.append(line)
+    if name is not None:
+        seqs[name] = "".join(buf).upper()
+    return seqs
 
 
 def _build_flank_prefixes(
@@ -571,6 +602,9 @@ def main(argv: list[str] | None = None) -> int:
     else:
         transcripts_fa = args.transcripts_fa
 
+    # Keep reference to original (unpadded) transcript FASTA for LORF scanning.
+    orig_transcripts_fa = transcripts_fa
+
     # 2b. optional 5' padding. Two modes:
     #   --prefix-pad-n K   : prepend K literal Ns.
     #   --flank-bp     K   : prepend K bp of REAL upstream genomic context
@@ -640,11 +674,19 @@ def main(argv: list[str] | None = None) -> int:
     transcripts = parse_stringtie_gtf(stringtie_gtf)
     print(f"  transcripts (exon structure): {len(transcripts)}", flush=True)
 
+    # 4b. Load transcript sequences for LORF classification (optional).
+    tx_seqs: dict[str, str] = {}
+    if args.lorf_class:
+        from tiberius_orf.data.gtf_writer import classify_lorf
+        tx_seqs = _load_tx_seqs(orig_transcripts_fa)
+        print(f"Loaded {len(tx_seqs)} transcript sequences for LORF classification",
+              flush=True)
+
     # 5. b2m predict / repredict adapters. The same function is used for
     # both — repredict only differs in being called on shorter chunks
     # centred on chunk boundaries, which the adapter handles identically.
     label_store: "dict[str, np.ndarray] | None" = (
-        {} if args.partial_out is not None else None
+        {} if (args.partial_out is not None or args.partial5_out is not None) else None
     )
     predict_func = _make_predict_func(
         model, hmm, chunk_len, args.batch_size, label_store=label_store,
@@ -668,6 +710,7 @@ def main(argv: list[str] | None = None) -> int:
     # annotate_genome finishes (postprocess may be called once per b2m
     # group). tid -> (coding_length, [gtf_lines])
     per_tx_output: dict[str, tuple[int, list[str]]] = {}
+    lorf_counts: dict[str, int] = {}
 
     pad_k = max(args.prefix_pad_n, args.flank_bp)
     if args.flank_clip and args.flank_bp == 0:
@@ -684,7 +727,7 @@ def main(argv: list[str] | None = None) -> int:
                 annot, args.min_coding_length, remove=True,
             )
         for seq_ann in annot:
-            for tx in seq_ann:
+            for tx in seq_ann.transcripts():
                 tid = tx.sequence
                 if tid not in transcripts:
                     continue
@@ -745,8 +788,13 @@ def main(argv: list[str] | None = None) -> int:
                 if args.min_utr_3 > 0 and (tx_len - orf_end) < args.min_utr_3:
                     continue
                 coding_length = sum(e - s for s, e in cds_intervals)
+                lc = (classify_lorf(tx_seqs[tid], orf_start)
+                      if tx_seqs and tid in tx_seqs else None)
+                if lc is not None:
+                    lorf_counts[lc] = lorf_counts.get(lc, 0) + 1
                 lines = _project_tx_intervals_to_genomic(
                     tid, cds_intervals, transcripts[tid], "tiberius_orf",
+                    lorf_class=lc,
                 )
                 per_tx_output[tid] = (coding_length, lines)
         return annot
@@ -815,11 +863,15 @@ def main(argv: list[str] | None = None) -> int:
             f"(clip_policy={'on' if clip_in_pad else 'off'})",
             flush=True,
         )
+    if lorf_counts:
+        for cls in ("LORF_UPSTOP", "sORF_UPSTOP", "upLORF", "LORF_NOUPSTOP"):
+            print(f"  complete LORF {cls}: {lorf_counts.get(cls, 0)}", flush=True)
 
     # Partial ORF emission: extract 3'-truncated ORFs from captured label arrays.
     if args.partial_out is not None and label_store:
         from tiberius_orf.data.gtf_writer import extract_partial_orfs
         n_partial = 0
+        partial_lorf_counts: dict[str, int] = {}
         with open(args.partial_out, "w") as fh:
             for tid in sorted(label_store):
                 if tid not in transcripts:
@@ -837,13 +889,50 @@ def main(argv: list[str] | None = None) -> int:
                         continue
                     if args.min_utr_5 > 0 and orf_start < args.min_utr_5:
                         continue
+                    lc = (classify_lorf(tx_seqs[tid], orf_start)
+                          if tx_seqs and tid in tx_seqs else None)
+                    if lc is not None:
+                        partial_lorf_counts[lc] = partial_lorf_counts.get(lc, 0) + 1
                     lines = _project_tx_intervals_to_genomic(
                         tid, [(orf_start, orf_end)], tx, "tiberius_orf",
+                        lorf_class=lc,
                     )
                     for line in lines:
                         fh.write(line + "\n")
                     n_partial += 1
         print(f"Partial ORFs: {n_partial} -> {args.partial_out}", flush=True)
+        if partial_lorf_counts:
+            for cls in ("LORF_UPSTOP", "sORF_UPSTOP", "upLORF", "LORF_NOUPSTOP"):
+                print(f"  partial LORF {cls}: {partial_lorf_counts.get(cls, 0)}",
+                      flush=True)
+
+    # 5'-partial ORF emission: extract ORFs that begin at transcript position 0
+    # with coding states (no preceding ATG) and end at a STOP.
+    if args.partial5_out is not None and label_store:
+        from tiberius_orf.data.gtf_writer import extract_5prime_partial_orfs
+        n_partial5 = 0
+        with open(args.partial5_out, "w") as fh:
+            for tid in sorted(label_store):
+                if tid not in transcripts:
+                    continue
+                tx = transcripts[tid]
+                chunk_lbl = label_store[tid]  # (n_chunks, T)
+                flat_lbl = chunk_lbl.ravel()
+                real_len = tx.length + pad_k
+                flat_lbl = flat_lbl[:real_len]
+                if pad_k > 0:
+                    flat_lbl = flat_lbl[pad_k:]
+                for orf_start, orf_end in extract_5prime_partial_orfs(flat_lbl):
+                    if args.min_coding_length > 0 and (orf_end - orf_start) < args.min_coding_length:
+                        continue
+                    # No min_utr_5 filter: 5'-partial ORFs start at position 0 by definition.
+                    lines = _project_tx_intervals_to_genomic(
+                        tid, [(orf_start, orf_end)], tx, "tiberius_orf",
+                    )
+                    for line in lines:
+                        fh.write(line + "\n")
+                    n_partial5 += 1
+        print(f"5'-partial ORFs: {n_partial5} -> {args.partial5_out}", flush=True)
 
     if cleanup:
         Path(intermediate_gtf).unlink(missing_ok=True)

@@ -14,6 +14,9 @@
 #
 # Pipeline per species:
 #   1. Diamond: query Tiberius peptides against order-excluded ODB → top-5 species
+#      Peptides sourced from (first found):
+#        a) ${WORK_DIR}/peptides/${species}.pep.fa
+#        b) gffread extraction from Tiberius ab initio GTF at ${BENCH_DIR}
 #   2. Filter ODB to those 5 species' proteins
 #   3. miniprot --gff: align filtered proteins to genome
 #   4. fix_stop_by_miniprot.py: extend partial ORFs and fix early stops in
@@ -24,7 +27,8 @@
 #   ${RESULTS_DIR}/${species}/annotate_run009_best_filt_tpm1cov3len300/orfs.gtf
 #   ${RESULTS_DIR}/${species}/annotate_run009_best_filt_tpm1cov3len300/orfs.partial.gtf
 #   ${WORK_DIR}/odb/filtered/${species}_excl_order.fa[.gz]
-#   ${WORK_DIR}/peptides/${species}.pep.fa  (optional: used for Diamond pre-filter)
+#   ${WORK_DIR}/peptides/${species}.pep.fa  (optional)
+#   ${BENCH_DIR}/paper/Vertebrata/${species}/results/predictions/tiberius/tiberius_seqlen.gtf  (fallback)
 #
 # Output:
 #   ${RESULTS_DIR}/${species}/fix_stop/orfs.fixed.gtf
@@ -36,8 +40,22 @@ module load singularity/3.11.3
 PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 RESULTS_DIR=${PROJDIR}/results/vertebrates_test
 WORK_DIR=/home/gabriell/tiberius_proteins_analysis
-TIBERIUS_SIF=${TIBERIUS_SIF:-docker://larsgabriel23/tiberius:2.0.2}
+BENCH_DIR=/home/gabriell/tiberius_benchmarking
 TIBERIUS_REPO=${TIBERIUS_REPO:-/home/gabriell/Tiberius}
+
+# Pull SIF once to a stable path; flock serializes across array tasks.
+SIF_STABLE="${PROJDIR}/sif/tiberius_2.0.2.sif"
+if [[ ! -s "${SIF_STABLE}" ]]; then
+    echo "[$(date -Iseconds)] Pulling Tiberius SIF (serialized) ..."
+    mkdir -p "${PROJDIR}/sif"
+    (
+        flock -x 200
+        [[ ! -s "${SIF_STABLE}" ]] && \
+            singularity pull "${SIF_STABLE}" docker://larsgabriel23/tiberius:2.0.2
+    ) 200>"${SIF_STABLE}.lock" || true
+    [[ -s "${SIF_STABLE}" ]] || { echo "ERROR: SIF pull failed: ${SIF_STABLE}" >&2; exit 1; }
+fi
+TIBERIUS_SIF="${SIF_STABLE}"
 
 FILT_TAG=filt_tpm1cov3len300
 TAG=run009_best_${FILT_TAG}
@@ -61,13 +79,15 @@ GENOME="${RESULTS_DIR}/${species}/assembly/genome.fa"
 ODB_PROTEINS="${WORK_DIR}/odb/filtered/${species}_excl_order.fa"
 [[ ! -s "${ODB_PROTEINS}" && -s "${ODB_PROTEINS}.gz" ]] && ODB_PROTEINS="${ODB_PROTEINS}.gz"
 TIBERIUS_PEPTIDES="${WORK_DIR}/peptides/${species}.pep.fa"
+TIBERIUS_GTF="${BENCH_DIR}/paper/Vertebrata/${species}/results/predictions/tiberius/tiberius_seqlen.gtf"
+BENCH_GENOME="${BENCH_DIR}/Vertebrata/${species}/genome.fa"
 ORF_DIR="${RESULTS_DIR}/${species}/annotate_${TAG}"
+PARTIAL5_GTF="${ORF_DIR}/orfs.partial5.gtf"
 OUT_DIR="${RESULTS_DIR}/${species}/fix_stop"
 
 echo "[$(date -Iseconds)] species=${species}"
 echo "[$(date -Iseconds)] genome=${GENOME}"
 echo "[$(date -Iseconds)] odb_proteins=${ODB_PROTEINS}"
-echo "[$(date -Iseconds)] tiberius_peptides=${TIBERIUS_PEPTIDES}"
 echo "[$(date -Iseconds)] orf_dir=${ORF_DIR}"
 echo "[$(date -Iseconds)] out_dir=${OUT_DIR}"
 
@@ -84,28 +104,49 @@ fi
     exit 1
 }
 
+# Skip only if fixed.gtf exists AND no new partial5 input has arrived since it was created.
 if [[ -s "${OUT_DIR}/orfs.fixed.gtf" ]]; then
-    echo "SKIP ${species}: ${OUT_DIR}/orfs.fixed.gtf already exists"
-    exit 0
+    if [[ ! -s "${PARTIAL5_GTF}" ]] || \
+       [[ "${OUT_DIR}/orfs.fixed.gtf" -nt "${PARTIAL5_GTF}" ]]; then
+        echo "SKIP ${species}: ${OUT_DIR}/orfs.fixed.gtf is up-to-date"
+        exit 0
+    fi
+    echo "[$(date -Iseconds)] Regenerating ${OUT_DIR}/orfs.fixed.gtf (partial5 input is newer)"
 fi
 
 mkdir -p "${OUT_DIR}"
 mkdir -p "${PROJDIR}/logs"
 
 run_tool() {
-    if [[ -n "${TIBERIUS_SIF:-}" ]]; then
-        singularity exec "${TIBERIUS_SIF}" "$@"
-    else
-        "$@"
-    fi
+    singularity exec \
+        --bind /projects/AI-GUSTUS,/home/gabriell \
+        "${TIBERIUS_SIF}" "$@"
 }
+
+# ── Peptide source: pre-extracted → gffread fallback ─────────────────────────
+if [[ ! -s "${TIBERIUS_PEPTIDES}" ]]; then
+    EXTRACTED_PEPTIDES="${OUT_DIR}/tiberius_peptides.fa"
+    if [[ -s "${EXTRACTED_PEPTIDES}" ]]; then
+        echo "[$(date -Iseconds)] Using previously extracted peptides: ${EXTRACTED_PEPTIDES}"
+        TIBERIUS_PEPTIDES="${EXTRACTED_PEPTIDES}"
+    elif [[ -s "${TIBERIUS_GTF}" && -s "${BENCH_GENOME}" ]]; then
+        echo "[$(date -Iseconds)] Extracting peptides from Tiberius ab initio GTF ..."
+        run_tool gffread "${TIBERIUS_GTF}" -g "${BENCH_GENOME}" -y "${EXTRACTED_PEPTIDES}" || true
+        if [[ -s "${EXTRACTED_PEPTIDES}" ]]; then
+            TIBERIUS_PEPTIDES="${EXTRACTED_PEPTIDES}"
+            echo "[$(date -Iseconds)] Extracted $(grep -c '^>' "${TIBERIUS_PEPTIDES}" || echo 0) peptides"
+        else
+            echo "[$(date -Iseconds)] WARN: gffread produced no output (contig ID mismatch?), using full ODB"
+        fi
+    else
+        echo "[$(date -Iseconds)] WARN: no peptides available; using full ODB for miniprot"
+    fi
+fi
 
 # ── Step 1: Diamond pre-filter to top-N species ───────────────────────────────
 PROTEINS_FOR_MINIPROT="${ODB_PROTEINS}"
 
-if [[ ! -s "${TIBERIUS_PEPTIDES}" ]]; then
-    echo "[$(date -Iseconds)] WARN: Tiberius peptides not found, using full ODB for miniprot"
-else
+if [[ -s "${TIBERIUS_PEPTIDES}" ]]; then
     PREPROCESSED_FA="${OUT_DIR}/protein_top${TOP_N}.fa"
     DIAMOND_DB="${OUT_DIR}/prot_db"
     DIAMOND_HITS="${OUT_DIR}/diamond_hits.tsv"
@@ -161,6 +202,8 @@ else
         echo "[$(date -Iseconds)] Diamond pre-filter already done, reusing ${PREPROCESSED_FA}"
     fi
     PROTEINS_FOR_MINIPROT="${PREPROCESSED_FA}"
+else
+    echo "[$(date -Iseconds)] No peptides — running miniprot against full ODB"
 fi
 
 # ── Step 2: miniprot alignment ────────────────────────────────────────────────
@@ -184,9 +227,13 @@ eval "$(micromamba shell hook --shell bash)"
 micromamba activate orffinder
 
 echo "[$(date -Iseconds)] Running fix_stop_by_miniprot.py ..."
+PARTIAL5_ARG=""
+[[ -s "${PARTIAL5_GTF}" ]] && PARTIAL5_ARG="--partial5 ${PARTIAL5_GTF}"
+# shellcheck disable=SC2086
 python "${PROJDIR}/scripts/fix_stop_by_miniprot.py" \
     --orfs     "${ORF_DIR}/orfs.gtf" \
     --partial  "${ORF_DIR}/orfs.partial.gtf" \
+    ${PARTIAL5_ARG} \
     --miniprot "${MINIPROT_GFF}" \
     --genome   "${GENOME}" \
     --out      "${OUT_DIR}/orfs.fixed.gtf"

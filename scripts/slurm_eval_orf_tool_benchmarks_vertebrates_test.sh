@@ -1,13 +1,12 @@
 #!/bin/bash
-# gffcompare Tiberius + TransDecoder1 + TransDecoder2 + TransDecoder2(--precise)
-# + GeneMarkS-T against the reference for each vertebrates_test species,
-# then aggregate into a single accuracy_table.tsv.
+# gffcompare Tiberius (run009 best) + TransDecoder1 + TransDecoder2 +
+# TransDecoder2(--precise) + GeneMarkS-T against the reference for each
+# vertebrates_test species, then aggregate into a single accuracy_table.tsv.
 #
 # Runs after the 4 tool jobs (td1, td2, td2_precise, gmst) have written
 # ${RESULTS_DIR}/<sp>/benchmark_orf_tools/<tool>/orfs.gtf. Tiberius's
-# baseline GTF is the same one the eval_observations script uses:
-# ${RESULTS_DIR}/<sp>/annotate_epoch_11/orfs.gtf. Override with $TIB_TAG
-# if you want a different Tiberius variant.
+# baseline GTF comes from annotate_run009_best_filt_tpm1cov3len300/orfs.gtf.
+# Override with TIB_TAG env var if you want a different annotation variant.
 #
 # Output:
 #   ${RESULTS_DIR}/benchmark_orf_tools/
@@ -26,7 +25,7 @@ set -euo pipefail
 
 PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 RESULTS_DIR=${PROJDIR}/results/vertebrates_test
-TIB_TAG=${TIB_TAG:-annotate_epoch_11}
+TIB_TAG=${TIB_TAG:-annotate_run009_best_filt_tpm1cov3len300}
 OUT_ROOT=${RESULTS_DIR}/benchmark_orf_tools
 
 SPECIES=(Gallus_gallus Pristiophorus_japonicus Bos_taurus Delphinapterus_leucas Takifugu_rubripes Zootoca_vivipara Archocentrus_centrarchus Betta_splendens)

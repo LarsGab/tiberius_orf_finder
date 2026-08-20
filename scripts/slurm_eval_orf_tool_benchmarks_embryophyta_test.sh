@@ -18,7 +18,7 @@ set -euo pipefail
 
 PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 TESTDIR=${PROJDIR}/results/training_embryophyta_test_v2
-TIB_TAG=${TIB_TAG:-annotate_run001_e39}
+TIB_TAG=${TIB_TAG:-annotate_run001_e300_filt_tpm1cov3len300}
 OUT_ROOT=${TESTDIR}/benchmark_orf_tools
 
 SPECIES=(Arabidopsis_thaliana Brachypodium_distachyon Eschscholzia_californica Freycinetia_multiflora Medicago_truncatula Mimulus_guttatus Urochloa_brizantha)

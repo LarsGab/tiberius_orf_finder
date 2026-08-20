@@ -29,8 +29,8 @@ from matplotlib.lines import Line2D
 
 
 TOOL_LABELS = {
-    "tiberius":              "Tiberius (subseq-filt)",
-    "tiberius_protein":      "Tiberius + protein filter",
+    "tiberius":              "TiberiusORF",
+    "tiberius_protein":      "TiberiusORF + protein filter",
     "transdecoder1":         "TransDecoder v1",
     "transdecoder2":         "TransDecoder2",
     "transdecoder2_precise": "TransDecoder2 (--precise)",

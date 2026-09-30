@@ -57,11 +57,12 @@ cd "${PROJDIR}"
 
 echo "[$(date -Iseconds)] computing features …"
 python "${PROJDIR}/scripts/compute_orf_features.py" \
-    --orfs-gtf       "${ORFS}" \
-    --miniprot-gff   "${MINIPROT}" \
-    --hints-gff      "${HINTS}" \
-    --genome         "${GENOME}" \
-    --out            "${OUT}"
+    --orfs-gtf        "${ORFS}" \
+    --miniprot-gff    "${MINIPROT}" \
+    --hints-gff       "${HINTS}" \
+    --genome          "${GENOME}" \
+    --proteins-fasta  "${TRAINDIR}/${species}/proteins/protein_top4.fa" \
+    --out             "${OUT}"
 
 echo "[$(date -Iseconds)] joining gffcompare labels …"
 python "${PROJDIR}/scripts/join_tmap_labels.py" \

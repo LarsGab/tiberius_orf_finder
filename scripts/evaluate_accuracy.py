@@ -67,37 +67,61 @@ GENE_SETS_ALL = [
     "orf_prediction",
     "tiberius",
     "tiberius_filtered",
+    "vipsania",
+    "vipsania_filtered",
+    "td2",
+    "td2_filtered",
     "oriongeno",
     "oriongeno_filtered",
     "annevo",
     "merged",
+    "merged_drusilla_vipsania",
+    "merged_drusilla_vipsania_tiberius",
+    "merged_drusilla_td2",
+    "merged_drusilla_td2_tiberius",
     "merged_oriongeno",
     "merged_all",
     "braker3",
 ]
 GS_LABELS = {
-    "orf_prediction":     "ORF prediction",
-    "tiberius":           "Tiberius",
-    "tiberius_filtered":  "Tiberius (filtered)",
-    "oriongeno":          "OrionGeno",
-    "oriongeno_filtered": "OrionGeno (filtered)",
-    "annevo":             "ANNEVO",
-    "merged":             "Merged (Tib_filt + ORF)",
-    "merged_oriongeno":   "Merged (Orion_filt + ORF)",
-    "merged_all":         "Merged (Tib_filt + Orion_filt + ORF)",
-    "braker3":            "BRAKER3",
+    "orf_prediction":                     "ORF prediction",
+    "tiberius":                           "Tiberius",
+    "tiberius_filtered":                  "Tiberius (filtered)",
+    "vipsania":                           "Vipsania",
+    "vipsania_filtered":                  "Vipsania (filtered)",
+    "td2":                                "TransDecoder2",
+    "td2_filtered":                       "TransDecoder2 (filtered)",
+    "oriongeno":                          "OrionGeno",
+    "oriongeno_filtered":                 "OrionGeno (filtered)",
+    "annevo":                             "ANNEVO",
+    "merged":                             "Merged (Tib_filt + ORF)",
+    "merged_drusilla_vipsania":           "Merged (Vip_filt + ORF)",
+    "merged_drusilla_vipsania_tiberius":  "Merged (Tib_filt + Vip_filt + ORF)",
+    "merged_drusilla_td2":                "Merged (TD2_filt + ORF)",
+    "merged_drusilla_td2_tiberius":       "Merged (Tib_filt + TD2_filt + ORF)",
+    "merged_oriongeno":                   "Merged (Orion_filt + ORF)",
+    "merged_all":                         "Merged (Tib_filt + Orion_filt + ORF)",
+    "braker3":                            "BRAKER3",
 }
 GS_MARKERS = {
-    "orf_prediction":     "o",
-    "tiberius":           "s",
-    "tiberius_filtered":  "v",
-    "oriongeno":          "p",
-    "oriongeno_filtered": "h",
-    "annevo":             "P",
-    "merged":             "^",
-    "merged_oriongeno":   "*",
-    "merged_all":         "X",
-    "braker3":            "D",
+    "orf_prediction":                     "o",
+    "tiberius":                           "s",
+    "tiberius_filtered":                  "v",
+    "vipsania":                           "<",
+    "vipsania_filtered":                  ">",
+    "td2":                                "d",
+    "td2_filtered":                       "H",
+    "oriongeno":                          "p",
+    "oriongeno_filtered":                 "h",
+    "annevo":                             "P",
+    "merged":                             "^",
+    "merged_drusilla_vipsania":           "1",
+    "merged_drusilla_vipsania_tiberius":  "2",
+    "merged_drusilla_td2":                "3",
+    "merged_drusilla_td2_tiberius":       "4",
+    "merged_oriongeno":                   "*",
+    "merged_all":                         "X",
+    "braker3":                            "D",
 }
 
 LEVELS = ["gene", "transcript"]
@@ -134,6 +158,22 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     help="Path template for AnnEvo GTF, with '{sp}' for the species name. "
                          "When given, it is added as a separate plotted gene set 'annevo' "
                          "(not used in any merge).")
+    ap.add_argument("--vip-tmpl", type=str, default=None,
+                    help="Path template for Vipsania GTF, with '{sp}' placeholder. "
+                         "When given, adds gene set 'vipsania'.")
+    ap.add_argument("--vip-filtered-tmpl", type=str, default=None,
+                    help="Path template for LGB-filtered Vipsania GTF, with '{sp}' placeholder. "
+                         "When given, adds gene set 'vipsania_filtered' and enables the "
+                         "'merged_drusilla_vipsania' and (with --tib-filtered-tmpl) "
+                         "'merged_drusilla_vipsania_tiberius' merged sets.")
+    ap.add_argument("--td2-tmpl", type=str, default=None,
+                    help="Path template for TransDecoder2 GTF, with '{sp}' placeholder. "
+                         "When given, adds gene set 'td2'.")
+    ap.add_argument("--td2-filtered-tmpl", type=str, default=None,
+                    help="Path template for LGB-filtered TransDecoder2 GTF, with '{sp}' placeholder. "
+                         "When given, adds gene set 'td2_filtered' and enables the "
+                         "'merged_drusilla_td2' and (with --tib-filtered-tmpl) "
+                         "'merged_drusilla_td2_tiberius' merged sets.")
     ap.add_argument("--filter-orf-vs-tib-subseq", action="store_true",
                     help="Before the merge, drop ORF preds that are a strict sub-sequence "
                          "of any Tiberius (or Tiberius-filtered when --tib-filtered-tmpl "
@@ -254,6 +294,10 @@ def main(argv: list[str] | None = None) -> int:
     has_orion       = args.oriongeno_tmpl          is not None
     has_orion_filt  = args.oriongeno_filtered_tmpl is not None
     has_annevo      = args.annevo_tmpl             is not None
+    has_vip         = args.vip_tmpl                is not None
+    has_vip_filt    = args.vip_filtered_tmpl       is not None
+    has_td2         = args.td2_tmpl                is not None
+    has_td2_filt    = args.td2_filtered_tmpl       is not None
     drop = set()
     if not has_tib_filt:
         drop.add("tiberius_filtered")
@@ -266,6 +310,20 @@ def main(argv: list[str] | None = None) -> int:
         drop.add("merged_all")
     if not has_annevo:
         drop.add("annevo")
+    if not has_vip:
+        drop.add("vipsania")
+    if not has_vip_filt:
+        drop.add("vipsania_filtered")
+        drop.add("merged_drusilla_vipsania")
+    if not (has_vip_filt and has_tib_filt):
+        drop.add("merged_drusilla_vipsania_tiberius")
+    if not has_td2:
+        drop.add("td2")
+    if not has_td2_filt:
+        drop.add("td2_filtered")
+        drop.add("merged_drusilla_td2")
+    if not (has_td2_filt and has_tib_filt):
+        drop.add("merged_drusilla_td2_tiberius")
     gene_sets = [gs for gs in GENE_SETS_ALL if gs not in drop]
     print(f"Gene sets: {gene_sets}", flush=True)
 
@@ -281,6 +339,10 @@ def main(argv: list[str] | None = None) -> int:
         orion_gtf      = Path(args.oriongeno_tmpl.format(sp=sp))          if has_orion      else None
         orion_filt_gtf = Path(args.oriongeno_filtered_tmpl.format(sp=sp)) if has_orion_filt else None
         annevo_gtf     = Path(args.annevo_tmpl.format(sp=sp))             if has_annevo     else None
+        vip_gtf        = Path(args.vip_tmpl.format(sp=sp))                if has_vip        else None
+        vip_filt_gtf   = Path(args.vip_filtered_tmpl.format(sp=sp))       if has_vip_filt   else None
+        td2_gtf        = Path(args.td2_tmpl.format(sp=sp))                if has_td2        else None
+        td2_filt_gtf   = Path(args.td2_filtered_tmpl.format(sp=sp))       if has_td2_filt   else None
 
         if not ref.exists():
             print(f"  [skip] missing reference: {ref}", flush=True)
@@ -326,6 +388,30 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"  [warn] missing annevo GTF: {annevo_gtf}", flush=True)
 
+        if has_vip:
+            if vip_gtf.exists():
+                gene_set_gtfs["vipsania"] = vip_gtf
+            else:
+                print(f"  [warn] missing vipsania GTF: {vip_gtf}", flush=True)
+
+        if has_vip_filt:
+            if vip_filt_gtf.exists():
+                gene_set_gtfs["vipsania_filtered"] = vip_filt_gtf
+            else:
+                print(f"  [warn] missing vipsania_filtered GTF: {vip_filt_gtf}", flush=True)
+
+        if has_td2:
+            if td2_gtf.exists():
+                gene_set_gtfs["td2"] = td2_gtf
+            else:
+                print(f"  [warn] missing td2 GTF: {td2_gtf}", flush=True)
+
+        if has_td2_filt:
+            if td2_filt_gtf.exists():
+                gene_set_gtfs["td2_filtered"] = td2_filt_gtf
+            else:
+                print(f"  [warn] missing td2_filtered GTF: {td2_filt_gtf}", flush=True)
+
         if brk_gtf.exists():
             gene_set_gtfs["braker3"] = brk_gtf
         else:
@@ -361,6 +447,76 @@ def main(argv: list[str] | None = None) -> int:
         else:
             missing_m = [str(p) for p in (tib_merge_gtf, pred_gtf) if not p.exists()]
             print(f"  [warn] skipping merge — missing: {missing_m}", flush=True)
+
+        # build merged_drusilla_vipsania = vipsania_filtered + orf_prediction
+        if has_vip_filt:
+            merged_dv_gtf = sp_work / "merged_drusilla_vipsania.gtf"
+            if vip_filt_gtf.exists() and pred_gtf.exists():
+                print("  merging vipsania_filtered + orf_prediction", flush=True)
+                if _run_merge(vip_filt_gtf, pred_gtf, merged_dv_gtf):
+                    gene_set_gtfs["merged_drusilla_vipsania"] = merged_dv_gtf
+                else:
+                    print("  [warn] merged_drusilla_vipsania empty — skipping", flush=True)
+            else:
+                miss = [str(p) for p in (vip_filt_gtf, pred_gtf) if not p.exists()]
+                print(f"  [warn] skipping merged_drusilla_vipsania — missing: {miss}",
+                      flush=True)
+
+        # build merged_drusilla_vipsania_tiberius =
+        #     tiberius_filtered + vipsania_filtered + orf_prediction
+        # (chained as merge(vipsania_filtered, orf_prediction) then + tib_filtered)
+        if has_vip_filt and has_tib_filt:
+            merged_dvt_gtf = sp_work / "merged_drusilla_vipsania_tiberius.gtf"
+            base_dv = gene_set_gtfs.get("merged_drusilla_vipsania")
+            if base_dv is not None and tib_filt_gtf.exists():
+                print("  merging (Vip_filt + ORF) + Tib_filt", flush=True)
+                if _run_merge(tib_filt_gtf, base_dv, merged_dvt_gtf):
+                    gene_set_gtfs["merged_drusilla_vipsania_tiberius"] = merged_dvt_gtf
+                else:
+                    print("  [warn] merged_drusilla_vipsania_tiberius empty — skipping",
+                          flush=True)
+            else:
+                miss = []
+                if base_dv is None:
+                    miss.append("merged_drusilla_vipsania (prior step failed)")
+                if not tib_filt_gtf.exists():
+                    miss.append(str(tib_filt_gtf))
+                print(f"  [warn] skipping merged_drusilla_vipsania_tiberius — missing: {miss}",
+                      flush=True)
+
+        # build merged_drusilla_td2 = td2_filtered + orf_prediction
+        if has_td2_filt:
+            merged_dt_gtf = sp_work / "merged_drusilla_td2.gtf"
+            if td2_filt_gtf.exists() and pred_gtf.exists():
+                print("  merging td2_filtered + orf_prediction", flush=True)
+                if _run_merge(td2_filt_gtf, pred_gtf, merged_dt_gtf):
+                    gene_set_gtfs["merged_drusilla_td2"] = merged_dt_gtf
+                else:
+                    print("  [warn] merged_drusilla_td2 empty — skipping", flush=True)
+            else:
+                miss = [str(p) for p in (td2_filt_gtf, pred_gtf) if not p.exists()]
+                print(f"  [warn] skipping merged_drusilla_td2 — missing: {miss}", flush=True)
+
+        # build merged_drusilla_td2_tiberius =
+        #     tiberius_filtered + td2_filtered + orf_prediction
+        if has_td2_filt and has_tib_filt:
+            merged_dtt_gtf = sp_work / "merged_drusilla_td2_tiberius.gtf"
+            base_dt = gene_set_gtfs.get("merged_drusilla_td2")
+            if base_dt is not None and tib_filt_gtf.exists():
+                print("  merging (TD2_filt + ORF) + Tib_filt", flush=True)
+                if _run_merge(tib_filt_gtf, base_dt, merged_dtt_gtf):
+                    gene_set_gtfs["merged_drusilla_td2_tiberius"] = merged_dtt_gtf
+                else:
+                    print("  [warn] merged_drusilla_td2_tiberius empty — skipping",
+                          flush=True)
+            else:
+                miss = []
+                if base_dt is None:
+                    miss.append("merged_drusilla_td2 (prior step failed)")
+                if not tib_filt_gtf.exists():
+                    miss.append(str(tib_filt_gtf))
+                print(f"  [warn] skipping merged_drusilla_td2_tiberius — missing: {miss}",
+                      flush=True)
 
         # build merged_oriongeno = oriongeno_filtered + orf_prediction
         if has_orion_filt:

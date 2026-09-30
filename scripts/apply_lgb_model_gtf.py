@@ -46,10 +46,10 @@ import pandas as pd
 TID_RE = re.compile(r'transcript_id\s+"([^"]+)"')
 
 NUMERIC_FEATURES = [
-    "n_exons", "cds_length_nt", "dist_upstream_stop_nt", "n_upstream_atgs",
+    "n_exons", "dist_upstream_stop_nt", "n_upstream_atgs",
     "n_overlapping_alignments", "best_identity", "best_norm_bitscore",
-    "best_target_coverage", "frac_introns_supported", "cds_length_pct",
-    "n_overlapping_alignments_pct",
+    "best_target_coverage", "best_protein_coverage", "frac_introns_supported",
+    "cds_length_pct", "n_overlapping_alignments_pct",
     "protein_extends_5prime_codons", "protein_extends_3prime_codons",
 ]
 BINARY_FEATURES = [

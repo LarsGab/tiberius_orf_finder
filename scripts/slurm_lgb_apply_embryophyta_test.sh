@@ -25,7 +25,7 @@ set -euo pipefail
 PROJDIR=/projects/AI-GUSTUS/tiberius_orf_finder
 RESULTS_DIR=${PROJDIR}/results/training_embryophyta_test_v2
 BENCH=/home/gabriell/tiberius_benchmarking
-MODEL=${PROJDIR}/results/filter_analysis/lgb_embryophyta/lgb_3class_model.pkl
+MODEL=${MODEL:-${PROJDIR}/results/filter_analysis/lgb_embryophyta/lgb_3class_model.pkl}
 ANNOT_TAG=annotate_run001_e300
 
 mkdir -p "${PROJDIR}/logs"
@@ -69,11 +69,12 @@ cd "${PROJDIR}"
 if [[ ! -s "${ORF_LGB}" || "${FORCE:-0}" == "1" ]]; then
     echo "[$(date -Iseconds)] Computing ORF features …"
     python scripts/compute_orf_features.py \
-        --orfs-gtf     "${ORFS_GTF}" \
-        --miniprot-gff "${MINIPROT}" \
-        --hints-gff    "${HINTS}" \
-        --genome       "${GENOME}" \
-        --out          "${ORF_FEAT}"
+        --orfs-gtf        "${ORFS_GTF}" \
+        --miniprot-gff    "${MINIPROT}" \
+        --hints-gff       "${HINTS}" \
+        --genome          "${GENOME}" \
+        --proteins-fasta  "${RESULTS_DIR}/${species}/proteins/protein_top4.fa" \
+        --out             "${ORF_FEAT}"
 
     echo "[$(date -Iseconds)] Applying LGB model to ORF predictions …"
     python scripts/apply_lgb_model_gtf.py \
@@ -98,11 +99,12 @@ if [[ ! -s "${TIB_LGB}" || "${FORCE:-0}" == "1" ]]; then
     mkdir -p "${TIB_OUTDIR}"
     echo "[$(date -Iseconds)] Computing ORF features for Tiberius GTF …"
     python scripts/compute_orf_features.py \
-        --orfs-gtf     "${TIB_GTF}" \
-        --miniprot-gff "${MINIPROT}" \
-        --hints-gff    "${HINTS}" \
-        --genome       "${GENOME}" \
-        --out          "${TIB_FEAT}"
+        --orfs-gtf        "${TIB_GTF}" \
+        --miniprot-gff    "${MINIPROT}" \
+        --hints-gff       "${HINTS}" \
+        --genome          "${GENOME}" \
+        --proteins-fasta  "${RESULTS_DIR}/${species}/proteins/protein_top4.fa" \
+        --out             "${TIB_FEAT}"
 
     echo "[$(date -Iseconds)] Applying LGB model to Tiberius predictions …"
     python scripts/apply_lgb_model_gtf.py \

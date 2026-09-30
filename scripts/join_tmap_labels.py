@@ -51,13 +51,15 @@ def main(argv=None) -> int:
             if len(cols) < 5:
                 continue
             class_code = cols[3]
-            # col 4 onward: q1:STRG.x.y|..., q2:..., etc.
+            # col 4 onward: q1:<gene_id>|<transcript_id>|<n_exons>|...
+            # Register both IDs as keys: for StringTie ORFs they are identical,
+            # but Tiberius emits distinct gene_id (g3) vs transcript_id (g3_t1).
             for field in cols[4:]:
                 if field.startswith("q") and ":" in field:
-                    payload = field.split(":", 1)[1]   # STRG.x.y|gene|...
-                    tid = payload.split("|")[0]
-                    if tid and tid != "-":
-                        labels[tid] = class_code
+                    parts = field.split(":", 1)[1].split("|")
+                    for k in parts[:2]:
+                        if k and k != "-":
+                            labels[k] = class_code
     print(f"  {len(labels)} tracking entries loaded", flush=True)
 
     cc = Counter(labels.values())

@@ -74,8 +74,8 @@ export TMPDIR=${RUNDIR}/tmp
 mkdir -p "${TMPDIR}"
 
 # ---- per-clade staging dir overrides ----
-# fetch.nf needs --braker_data_dir for diatoms (BRAKER annotation) and
-# --phytozome_data_dir for embryophyta (Phytozome annotation). Defaults
+# fetch.nf needs --braker_data_dir for diatoms/insects (BRAKER annotation)
+# and --phytozome_data_dir for embryophyta (Phytozome annotation). Defaults
 # in brain_shortread_v2.config point at paths that no longer exist
 # post-migration; override here so each clade gets the right one.
 EXTRA_NF_ARGS=()
@@ -84,7 +84,18 @@ case "${CLADE}" in
         EXTRA_NF_ARGS+=(--braker_data_dir /projects/AI-GUSTUS/tiberius_diatoms_staged/by_species) ;;
     embryophyta)
         EXTRA_NF_ARGS+=(--phytozome_data_dir /projects/AI-GUSTUS/tiberius_embryophyta_staged/by_species) ;;
+    insects)
+        EXTRA_NF_ARGS+=(--braker_data_dir /home_old/nas-hs/projs/tiberius-insects/data/insects_data_braker) ;;
 esac
+
+# Optional VARUS tuning overrides via env vars, e.g. for problem species
+# that can't finish 1000 batches x 50000 reads in the 72h walltime cap.
+if [ -n "${VARUS_MAX_BATCHES:-}" ]; then
+    EXTRA_NF_ARGS+=(--varus_max_batches "${VARUS_MAX_BATCHES}")
+fi
+if [ -n "${VARUS_BATCH_SIZE:-}" ]; then
+    EXTRA_NF_ARGS+=(--varus_batch_size "${VARUS_BATCH_SIZE}")
+fi
 
 cd "${RUNDIR}"
 

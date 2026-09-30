@@ -7,6 +7,10 @@ CLI::
       --val-manifest   results/val/tfrecord_manifest.tsv \\
       --config         configs/default.yaml \\
       --outdir         results/models/run_001
+
+``--val-manifest`` is optional. When omitted, no validation data is fed
+to model.fit and validation-based callbacks (best-weights checkpoint,
+early stopping, ReduceLROnPlateau) are skipped.
 """
 
 from __future__ import annotations
@@ -24,8 +28,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Train tiberius_orf model.")
     ap.add_argument("--train-manifest", type=Path, required=True,
                     help="TSV manifest of training TFRecords (species<TAB>path).")
-    ap.add_argument("--val-manifest", type=Path, required=True,
-                    help="TSV manifest of validation TFRecords.")
+    ap.add_argument("--val-manifest", type=Path, default=None,
+                    help="TSV manifest of validation TFRecords. Optional; "
+                         "when omitted, model.fit runs without validation "
+                         "and val-based callbacks are skipped.")
     ap.add_argument("--config", type=Path, default=Path("configs/default.yaml"),
                     help="YAML config file (default: configs/default.yaml).")
     ap.add_argument("--outdir", type=Path, required=True,
@@ -88,7 +94,7 @@ def _build_optimizer(tc: dict, model_type: str) -> object:
     return tf.keras.optimizers.Adam(learning_rate=lr_schedule)
 
 
-def _build_callbacks(tc: dict, outdir: Path) -> list:
+def _build_callbacks(tc: dict, outdir: Path, has_val: bool) -> list:
     import tensorflow as tf
 
     cbs = [
@@ -99,35 +105,37 @@ def _build_callbacks(tc: dict, outdir: Path) -> list:
             save_freq="epoch",
             verbose=0,
         ),
-        tf.keras.callbacks.ModelCheckpoint(
+        tf.keras.callbacks.CSVLogger(str(outdir / "train_log.tsv"), separator="\t"),
+        tf.keras.callbacks.TerminateOnNaN(),
+    ]
+
+    if has_val:
+        cbs.append(tf.keras.callbacks.ModelCheckpoint(
             filepath=str(outdir / "best.weights.h5"),
             save_best_only=True,
             monitor="val_loss",
             save_weights_only=True,
             verbose=1,
-        ),
-        tf.keras.callbacks.CSVLogger(str(outdir / "train_log.tsv"), separator="\t"),
-        tf.keras.callbacks.TerminateOnNaN(),
-    ]
-
-    es_cfg = tc.get("early_stopping", {})
-    if es_cfg:
-        cbs.append(tf.keras.callbacks.EarlyStopping(
-            monitor=es_cfg.get("monitor", "val_loss"),
-            patience=es_cfg.get("patience", 20),
-            restore_best_weights=True,
-            verbose=1,
         ))
 
-    lrr_cfg = tc.get("lr_reduce", {})
-    if lrr_cfg:
-        cbs.append(tf.keras.callbacks.ReduceLROnPlateau(
-            monitor=lrr_cfg.get("monitor", "val_loss"),
-            patience=lrr_cfg.get("patience", 7),
-            factor=lrr_cfg.get("factor", 0.5),
-            min_lr=lrr_cfg.get("min_lr", 1e-6),
-            verbose=1,
-        ))
+        es_cfg = tc.get("early_stopping", {})
+        if es_cfg:
+            cbs.append(tf.keras.callbacks.EarlyStopping(
+                monitor=es_cfg.get("monitor", "val_loss"),
+                patience=es_cfg.get("patience", 20),
+                restore_best_weights=True,
+                verbose=1,
+            ))
+
+        lrr_cfg = tc.get("lr_reduce", {})
+        if lrr_cfg:
+            cbs.append(tf.keras.callbacks.ReduceLROnPlateau(
+                monitor=lrr_cfg.get("monitor", "val_loss"),
+                patience=lrr_cfg.get("patience", 7),
+                factor=lrr_cfg.get("factor", 0.5),
+                min_lr=lrr_cfg.get("min_lr", 1e-6),
+                verbose=1,
+            ))
 
     return cbs
 
@@ -167,13 +175,17 @@ def main(argv: list[str] | None = None) -> int:
         shuffle_buffer=dc["shuffle_buffer"],
         repeat=True,
     ))
-    val_ds = _pack_y(make_dataset(
-        args.val_manifest,
-        chunk_len=dc["chunk_len"],
-        batch_size=dc["batch_size"],
-        shuffle=False,
-        repeat=False,
-    ))
+    if args.val_manifest is not None:
+        val_ds = _pack_y(make_dataset(
+            args.val_manifest,
+            chunk_len=dc["chunk_len"],
+            batch_size=dc["batch_size"],
+            shuffle=False,
+            repeat=False,
+        ))
+    else:
+        val_ds = None
+        print("no --val-manifest given: training without validation", flush=True)
 
     model = build_model_from_config(cfg, chunk_len=dc["chunk_len"])
     print(f"Model type: {mc['type']}", flush=True)
@@ -203,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
         epochs=tc["epochs"],
         steps_per_epoch=tc["steps_per_epoch"],
         validation_data=val_ds,
-        callbacks=_build_callbacks(tc, args.outdir),
+        callbacks=_build_callbacks(tc, args.outdir, has_val=val_ds is not None),
         initial_epoch=args.initial_epoch,
     )
 

@@ -29,7 +29,7 @@ TIB_TAG=${TIB_TAG:-annotate_epoch_74_filt_tpm1cov3len300}
 FILT_TAG=filt_tpm1cov3len300
 OUT_ROOT=${RESULTS_DIR}/benchmark_orf_tools_${FILT_TAG}
 
-SPECIES=(Gallus_gallus Pristiophorus_japonicus Bos_taurus Delphinapterus_leucas Takifugu_rubripes Zootoca_vivipara Archocentrus_centrarchus Betta_splendens)
+SPECIES=(Gallus_gallus Pristiophorus_japonicus Bos_taurus Delphinapterus_leucas Takifugu_rubripes Zootoca_vivipara Archocentrus_centrarchus Betta_splendens Homo_sapiens)
 TOOLS=(tiberius transdecoder1 transdecoder2 transdecoder2_precise gmst)
 
 mkdir -p "${PROJDIR}/logs" "${OUT_ROOT}"

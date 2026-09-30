@@ -9,6 +9,7 @@ Inputs
 ------
 --orfs-gtf       CDS-only GTF from annotate.py (with lorf_class attribute)
 --miniprot-gff   Miniprot protein-to-genome GFF3 (miniprot_scored.gff)
+--proteins-fasta Protein FASTA used for miniprot alignment (enables best_protein_coverage)
 --hints-gff      miniprothint hc.gff (intron/start_codon/stop_codon hints)
 --genome         Genome FASTA (pyfaidx-readable)
 --ref-tmap       Optional gffcompare .tmap output for match labels
@@ -20,7 +21,7 @@ Output columns (one row per transcript)
 transcript_id contig strand n_exons cds_length_nt lorf_class
 dist_upstream_stop_nt n_upstream_atgs
 has_protein_support n_overlapping_alignments
-best_identity best_score best_norm_bitscore best_target_coverage
+best_identity best_score best_norm_bitscore best_target_coverage best_protein_coverage
 protein_extends_5prime_codons protein_extends_3prime_codons
 n_introns_supported frac_introns_supported
 has_start_hint has_stop_hint support_level
@@ -72,6 +73,14 @@ def _attr(col: str, key: str) -> str | None:
     return None
 
 
+def _parse_target(col: str) -> tuple[str, int, int]:
+    """Parse GFF3 Target=proteinID start end attribute.  Returns ("", 0, 0) when absent."""
+    m = re.search(r'Target=([^;\s]+)\s+(\d+)\s+(\d+)', col)
+    if m:
+        return m.group(1), int(m.group(2)), int(m.group(3))
+    return "", 0, 0
+
+
 # ── Data structures ────────────────────────────────────────────────────────────
 
 @dataclass
@@ -120,6 +129,8 @@ class MpAln:
     segments: list[tuple[int, int]] = field(default_factory=list)
     identity: float = 0.0
     score: int = 0
+    target_id: str = ""      # protein sequence ID from Target= attribute
+    target_aln_aa: int = 0   # aligned amino acids on the target protein side
 
     @property
     def aln_first(self) -> int:
@@ -172,8 +183,11 @@ def parse_miniprot(path: Path) -> list[MpAln]:
             ident = float(_attr(row[8], "Identity") or "0")
             # Score is in GFF column 6 (0-based index 5), not an attribute
             sc = int(row[5]) if row[5] not in (".", "", "*") else 0
+            tid, tstart, tend = _parse_target(row[8])
+            target_aln_aa = max(0, tend - tstart)
             pending[mid] = MpAln(mid=mid, contig=row[0], strand=row[6],
-                                 identity=ident, score=sc)
+                                 identity=ident, score=sc,
+                                 target_id=tid, target_aln_aa=target_aln_aa)
         elif row[2] == "CDS":
             parent = _attr(row[8], "Parent")
             if parent in pending:
@@ -299,7 +313,8 @@ def upstream_features(orf: ORFRec, genome: Fasta,
     return {"dist_upstream_stop_nt": dist, "n_upstream_atgs": n_atgs}
 
 
-def protein_features(orf: ORFRec, alns: list[MpAln]) -> dict:
+def protein_features(orf: ORFRec, alns: list[MpAln],
+                     protein_lens: dict[str, int]) -> dict:
     nan = float("nan")
     if not alns:
         return dict(
@@ -309,6 +324,7 @@ def protein_features(orf: ORFRec, alns: list[MpAln]) -> dict:
             best_score=nan,
             best_norm_bitscore=nan,
             best_target_coverage=nan,
+            best_protein_coverage=nan,
             protein_extends_5prime_codons=0,
             protein_extends_3prime_codons=0,
             has_conflict=False,
@@ -346,6 +362,9 @@ def protein_features(orf: ORFRec, alns: list[MpAln]) -> dict:
             conflict_delta = mp.identity - best.identity
             break
 
+    prot_len = protein_lens.get(best.target_id, 0)
+    best_protein_coverage = best.target_aln_aa / prot_len if prot_len > 0 else nan
+
     return dict(
         has_protein_support=True,
         n_overlapping_alignments=len(alns),
@@ -353,6 +372,7 @@ def protein_features(orf: ORFRec, alns: list[MpAln]) -> dict:
         best_score=float(best.score),
         best_norm_bitscore=best.score / best.aligned_aa,
         best_target_coverage=tc,
+        best_protein_coverage=best_protein_coverage,
         protein_extends_5prime_codons=ext5,
         protein_extends_3prime_codons=ext3,
         has_conflict=has_conflict,
@@ -439,6 +459,7 @@ COLUMNS = [
     "dist_upstream_stop_nt", "n_upstream_atgs",
     "has_protein_support", "n_overlapping_alignments",
     "best_identity", "best_score", "best_norm_bitscore", "best_target_coverage",
+    "best_protein_coverage",
     "protein_extends_5prime_codons", "protein_extends_3prime_codons",
     "n_introns_supported", "frac_introns_supported",
     "has_start_hint", "has_stop_hint", "support_level",
@@ -468,6 +489,8 @@ def _parse_args(argv=None):
     ap.add_argument("--orfs-gtf",       required=True, type=Path)
     ap.add_argument("--miniprot-gff",   required=False, default=None, type=Path,
                     help="Miniprot scored GFF (optional; protein features zeroed when absent)")
+    ap.add_argument("--proteins-fasta", required=False, default=None, type=Path,
+                    help="Protein FASTA used for miniprot alignment; enables best_protein_coverage")
     ap.add_argument("--hints-gff",      required=False, default=None, type=Path,
                     help="miniprothint hc.gff (optional; hint features zeroed when absent)")
     ap.add_argument("--genome",         required=True, type=Path)
@@ -479,6 +502,12 @@ def _parse_args(argv=None):
     ap.add_argument("--min-overlap-frac", type=float, default=0.3)
     ap.add_argument("--split-gene-max-gap", type=int, default=5000,
                     help="Max intergenic gap to flag as split-gene partner (default 5000)")
+    ap.add_argument("--fallback-lorf-class", action="store_true",
+                    help="When the input GTF does not carry a lorf_class attribute "
+                         "(e.g. Vipsania or TransDecoder2 output), synthesize it from "
+                         "the upstream stop scan: LORF_UPSTOP when dist_upstream_stop_nt "
+                         "is finite, LORF_NOUPSTOP otherwise. Assumes one ORF per "
+                         "transcript (LORF); does not detect sORF / upLORF variants.")
     return ap.parse_args(argv)
 
 
@@ -492,11 +521,21 @@ def main(argv=None) -> int:
     orfs = parse_orfs(args.orfs_gtf)
     print(f"  {len(orfs)} ORFs", file=sys.stderr)
 
+    protein_lens: dict[str, int] = {}
+    if args.proteins_fasta is not None:
+        print(f"Loading protein lengths: {args.proteins_fasta}", file=sys.stderr)
+        prot_fa = Fasta(str(args.proteins_fasta), as_raw=True)
+        protein_lens = {k: len(prot_fa[k]) for k in prot_fa.keys()}
+        print(f"  {len(protein_lens)} proteins", file=sys.stderr)
+
     if args.miniprot_gff is not None:
         print(f"Parsing miniprot GFF: {args.miniprot_gff}", file=sys.stderr)
         mp_alns = parse_miniprot(args.miniprot_gff)
         mp_index = build_mp_index(mp_alns)
         print(f"  {len(mp_alns)} alignments", file=sys.stderr)
+        if not protein_lens:
+            print("  Warning: --proteins-fasta not provided; best_protein_coverage will be NaN",
+                  file=sys.stderr)
     else:
         print("No miniprot GFF provided — protein features will be zero", file=sys.stderr)
         mp_alns, mp_index = [], {}
@@ -547,15 +586,20 @@ def main(argv=None) -> int:
         w = csv.writer(fh, delimiter="\t")
         w.writerow(cols)
         for orf, alns in orf_alns:
-            pf = protein_features(orf, alns)
+            pf = protein_features(orf, alns, protein_lens)
+            uf = upstream_features(orf, genome, contig_lens, args.upstream_scan)
+            lorf = orf.lorf_class
+            if lorf is None and args.fallback_lorf_class:
+                lorf = "LORF_UPSTOP" if uf.get("dist_upstream_stop_nt") is not None \
+                    else "LORF_NOUPSTOP"
             row: dict = {
                 "transcript_id": orf.tid,
                 "contig": orf.contig,
                 "strand": orf.strand,
                 "n_exons": orf.n_exons,
                 "cds_length_nt": orf.cds_length,
-                "lorf_class": orf.lorf_class or "NA",
-                **upstream_features(orf, genome, contig_lens, args.upstream_scan),
+                "lorf_class": lorf or "NA",
+                **uf,
                 **pf,
                 **hint_features(orf, hint_introns, hint_starts, hint_stops),
                 "cds_length_pct": _pct(orf.cds_length),

@@ -49,6 +49,21 @@ process FETCH_ASSEMBLY {
     """
     set -euo pipefail
 
+    # --- 0) reuse pre-existing publishDir outputs if valid ---
+    # When a previous run of this pipeline already produced valid assembly
+    # outputs for this species, skip the (potentially slow / flaky) fetch
+    # and just rehydrate the work-dir from the published copies. This lets
+    # a fresh nextflow run (with wiped .nextflow/ cache) recover instantly
+    # instead of re-downloading from NCBI or re-staging from BRAKER.
+    pub_asm="${params.outdir}/${underscored}/assembly"
+    if [[ -s "\$pub_asm/genome.fa.gz" && -s "\$pub_asm/annotation.gff" ]]; then
+        echo "reusing pre-staged assembly from \$pub_asm" >&2
+        gunzip -c "\$pub_asm/genome.fa.gz" > genome.fa
+        cp "\$pub_asm/annotation.gff" annotation.gff
+        cp "\$pub_asm/genome.fa.gz"    genome.fa.gz
+        exit 0
+    fi
+
     # --- 1) fetch/stage raw genome.fa + annotation.gff ---
     case "${source}" in
       ncbi)

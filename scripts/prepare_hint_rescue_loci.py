@@ -2,28 +2,27 @@
 """
 Prepare a multi-FASTA + combined hints GFF for Tiberius hint-guided rescue.
 
-Input:
-  - LGB-classified partial transcripts (tiberius_lgb_partial.gtf)
-  - Chain-tagged hints produced by chainedHints.py  (chain_id= attribute)
-  - Genome FASTA + FAI index
+Logic per locus:
+  1. Only rescue partial transcripts that have NO overlapping tib_correct
+     prediction on the SAME strand.
+  2. Use the single best protein chain (highest sum of al_score) per merged
+     locus — one FASTA entry, one hint set, one Tiberius prediction.
+  3. Skip rescue if any existing ORF transcript already contains ALL intron
+     positions from the top chain (ORF agrees with the protein → no rescue
+     needed).
 
-Logic:
-  For each partial transcript locus that has at least one intron hint:
-    1. Add flanking, merge overlapping loci.
-    2. Find all distinct chains (chain_id values) with intron hints at the locus.
-    3. Optionally cap to the --max_chains highest-supported chains.
-    4. For each (locus, chain) pair emit one FASTA entry and the chain's local hints.
+Loci are merged per-strand so evidence from opposite strands stays separate.
+Start and stop codon hints from the chain are included alongside intron hints.
 
-FASTA entry names are opaque indices (locus_NNNNNN) to avoid special-
-character issues.  A manifest TSV maps each index back to (chr, bed_start,
-bed_end, chain_id) for coordinate back-conversion after Tiberius.
-
-FASTA extraction uses samtools faidx (must be on PATH).
-
-Output (all in --outdir):
-  combined_loci.fa     — multi-FASTA for Tiberius --genome
-  combined_hints.gff   — per-entry hints for Tiberius --hints
-  loci_manifest.tsv    — locus_id TAB chr TAB bed_start TAB bed_end TAB chain_id
+Usage:
+    python prepare_hint_rescue_loci.py \\
+        --partial_gtf  tiberius_lgb_partial.gtf \\
+        --correct_gtf  tiberius_lgb_correct.gtf \\
+        --chained_hints chained_hints.gff \\
+        --orfs_gtf     orfs.gtf [orfs.partial.gtf ...] \\
+        --genome       genome.fa \\
+        --outdir       hint_rescue/ \\
+        [--flank 25000]
 """
 import argparse
 import bisect
@@ -37,30 +36,37 @@ from collections import defaultdict
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument('--partial_gtf',  required=True, help='tiberius_lgb_partial.gtf')
-    p.add_argument('--chained_hints',required=True,
+    p.add_argument('--partial_gtf',   required=True, help='tiberius_lgb_partial.gtf')
+    p.add_argument('--correct_gtf',   required=True, help='tiberius_lgb_correct.gtf')
+    p.add_argument('--chained_hints', required=True,
                    help='chain_id-tagged hints (output of chainedHints.py)')
-    p.add_argument('--genome',       required=True, help='genome.fa (must have .fai)')
-    p.add_argument('--outdir',       required=True, help='output directory')
-    p.add_argument('--flank',  type=int, default=25000,
-                   help='bp to add on each side of each locus (default 25000)')
-    p.add_argument('--max_chains', type=int, default=None,
-                   help='max chains per locus, ranked by intron count (default: no cap)')
+    p.add_argument('--orfs_gtf', required=True, nargs='+',
+                   help='ORF GTF file(s) for intron-agreement check (orfs.gtf etc.)')
+    p.add_argument('--genome',  required=True, help='genome.fa (must have .fai)')
+    p.add_argument('--outdir',  required=True, help='output directory')
+    p.add_argument('--flank', type=int, default=25000,
+                   help='bp flanking each side of a locus (default 25000)')
     return p.parse_args()
 
 
-# ── GFF attribute helpers ─────────────────────────────────────────────────────
+# ── GFF/GTF attribute helpers ─────────────────────────────────────────────────
 
-def get_attr(attr_col, key):
-    """Return value of 'key=' in a GFF9 attribute column, or None."""
-    for field in attr_col.split(';'):
+def gff_attr(col, key):
+    """Return value of 'key=' from a GFF9 attribute column, or None."""
+    for field in col.split(';'):
         field = field.strip()
         if field.startswith(key + '='):
-            return field[len(key)+1:]
+            return field[len(key)+1:].strip()
     return None
 
+def gtf_attr(col, key):
+    """Return value of 'key "value"' from a GTF attribute column, or None."""
+    import re
+    m = re.search(r'%s "([^"]+)"' % re.escape(key), col)
+    return m.group(1) if m else None
 
-# ── FAI index ─────────────────────────────────────────────────────────────────
+
+# ── FAI / chrom sizes ─────────────────────────────────────────────────────────
 
 def load_chrom_sizes(fai_path):
     sizes = {}
@@ -72,9 +78,10 @@ def load_chrom_sizes(fai_path):
     return sizes
 
 
-# ── Partial transcript loader ─────────────────────────────────────────────────
+# ── Transcript loaders ────────────────────────────────────────────────────────
 
 def load_transcripts(gtf_path):
+    """(chrom, start0, end0, strand) for each transcript feature."""
     txs = []
     with open(gtf_path) as fh:
         for line in fh:
@@ -84,45 +91,131 @@ def load_transcripts(gtf_path):
             if len(parts) < 9 or parts[2] != 'transcript':
                 continue
             try:
-                txs.append((parts[0], int(parts[3]) - 1, int(parts[4])))
+                txs.append((parts[0], int(parts[3]) - 1, int(parts[4]), parts[6]))
             except ValueError:
                 continue
     return txs
 
 
-# ── Interval merge ────────────────────────────────────────────────────────────
+# ── Strand-aware interval index ───────────────────────────────────────────────
 
-def merge_intervals(ivs):
-    if not ivs:
-        return []
-    ivs = sorted(ivs)
-    merged = [list(ivs[0])]
-    for chrom, start, end in ivs[1:]:
-        last = merged[-1]
-        if chrom == last[0] and start <= last[2]:
-            last[2] = max(last[2], end)
-        else:
-            merged.append([chrom, start, end])
-    return merged
+def build_strand_index(transcripts):
+    """O(log n) overlap query index keyed by (chrom, strand)."""
+    raw = defaultdict(list)
+    for chrom, start, end, strand in transcripts:
+        raw[(chrom, strand)].append((start, end))
+    index = {}
+    for key, ivs in raw.items():
+        ivs.sort()
+        starts  = [iv[0] for iv in ivs]
+        max_end = []
+        cur = 0
+        for iv in ivs:
+            cur = max(cur, iv[1])
+            max_end.append(cur)
+        index[key] = (starts, max_end)
+    return index
+
+def any_overlap(index, chrom, strand, start0, end0):
+    key = (chrom, strand)
+    if key not in index:
+        return False
+    starts, max_end = index[key]
+    right = bisect.bisect_left(starts, end0)
+    return right > 0 and max_end[right - 1] > start0
 
 
-# ── Hint index (for locus→chains and chain→hints lookups) ────────────────────
+# ── ORF intron index ──────────────────────────────────────────────────────────
+
+def load_orf_introns(gtf_paths):
+    """
+    Build a per-(chrom, strand) list of (tx_start, tx_end, frozenset_of_introns).
+    Introns are derived from consecutive CDS features (1-based inclusive coords).
+    Single-exon transcripts are excluded (no introns to compare).
+    """
+    cds_by_tx = defaultdict(list)   # (chrom, strand, tx_id) -> [(start, end)]
+    for path in gtf_paths:
+        with open(path) as fh:
+            for line in fh:
+                if line.startswith('#'):
+                    continue
+                parts = line.split('\t')
+                if len(parts) < 9 or parts[2] != 'CDS':
+                    continue
+                tx_id = gtf_attr(parts[8], 'transcript_id')
+                if not tx_id:
+                    continue
+                try:
+                    txs_key = (parts[0], parts[6], tx_id)
+                    cds_by_tx[txs_key].append((int(parts[3]), int(parts[4])))
+                except ValueError:
+                    continue
+
+    raw = defaultdict(list)
+    for (chrom, strand, _tx_id), cds in cds_by_tx.items():
+        if len(cds) < 2:
+            continue
+        cds = sorted(cds)
+        tx_start = cds[0][0]
+        tx_end   = cds[-1][1]
+        introns  = frozenset(
+            (cds[i][1] + 1, cds[i+1][0] - 1)
+            for i in range(len(cds) - 1)
+        )
+        raw[(chrom, strand)].append((tx_start, tx_end, introns))
+
+    # Sort each chromosome list and build a max-end prefix for fast lookup
+    orf_index = {}
+    for key, txs in raw.items():
+        txs.sort()
+        starts  = [tx[0] for tx in txs]
+        max_end = []
+        cur = 0
+        for tx in txs:
+            cur = max(cur, tx[1])
+            max_end.append(cur)
+        orf_index[key] = (starts, max_end, txs)
+    return orf_index
+
+def orf_agrees(orf_index, chrom, strand, chain_introns, locus_start0, locus_end0):
+    """
+    True if any ORF transcript overlapping the locus contains all chain introns.
+    chain_introns : frozenset of (start, end) tuples in 1-based genome coords.
+    """
+    if not chain_introns:
+        return False
+    key = (chrom, strand)
+    if key not in orf_index:
+        return False
+    starts, max_end, txs = orf_index[key]
+    right = bisect.bisect_left(starts, locus_end0)
+    if right == 0 or max_end[right - 1] <= locus_start0:
+        return False
+    for i in range(right):
+        tx_start, tx_end, orf_introns = txs[i]
+        if tx_end <= locus_start0:
+            continue
+        if chain_introns.issubset(orf_introns):
+            return True
+    return False
+
+
+# ── Chained hint index ────────────────────────────────────────────────────────
 
 def load_chained_hints(gff_path):
     """
-    Parse chain_id-tagged hints.
+    Parse chain_id-tagged hints (genome coordinates).
 
     Returns
     -------
-    intron_index : dict  chrom -> (sorted_starts, max_end_prefix, list_of_hint_dicts)
-        For fast "which chains overlap locus?" queries.
-    hints_by_chain : dict  (chrom, chain_id) -> list_of_hint_lines
-        Raw GFF lines per chain, for writing per-locus hint subsets.
+    intron_index   : chrom → (sorted_starts, max_end_prefix, hint_tuples)
+                     hint_tuples: (start0, end0, chain_id, strand)
+    hints_by_chain : (chrom, chain_id) → [raw_gff_lines]
+    chain_scores   : (chrom, chain_id) → sum of al_score
     """
-    # Collect intron hints per chromosome (for overlap index)
-    introns_by_chrom = defaultdict(list)   # chrom -> [(start0, end0, chain_id)]
-    # Collect all hints per (chrom, chain_id)
-    hints_by_chain = defaultdict(list)     # (chrom, chain_id) -> [raw_line, ...]
+    introns_by_chrom = defaultdict(list)
+    hints_by_chain   = defaultdict(list)
+    chain_scores     = defaultdict(float)
 
     with open(gff_path) as fh:
         for line in fh:
@@ -131,66 +224,105 @@ def load_chained_hints(gff_path):
             parts = line.rstrip('\n').split('\t')
             if len(parts) < 9:
                 continue
-            chrom, feature = parts[0], parts[2].lower()
-            chain_id = get_attr(parts[8], 'chain_id')
+            chrom   = parts[0]
+            feature = parts[2].lower()
+            strand  = parts[6] if len(parts) > 6 else '.'
+            chain_id = gff_attr(parts[8], 'chain_id')
             if not chain_id:
                 continue
             try:
                 start0 = int(parts[3]) - 1   # 0-based
-                end0   = int(parts[4])        # 0-based exclusive
+                end0   = int(parts[4])         # 0-based exclusive
             except ValueError:
                 continue
             if end0 <= start0:
                 continue
 
-            hints_by_chain[(chrom, chain_id)].append(line.rstrip('\n'))
-            if feature == 'intron':
-                introns_by_chrom[chrom].append((start0, end0, chain_id))
+            al_score_str = gff_attr(parts[8], 'al_score')
+            try:
+                al_score = float(al_score_str) if al_score_str else 0.0
+            except ValueError:
+                al_score = 0.0
 
-    # Build sorted intron index with max-end prefix for O(log n) overlap queries
+            hints_by_chain[(chrom, chain_id)].append(line.rstrip('\n'))
+            chain_scores[(chrom, chain_id)] += al_score
+
+            if feature == 'intron':
+                introns_by_chrom[chrom].append((start0, end0, chain_id, strand))
+
     intron_index = {}
     for chrom, ivs in introns_by_chrom.items():
         ivs.sort()
-        starts   = [iv[0] for iv in ivs]
-        max_end  = []
+        starts  = [iv[0] for iv in ivs]
+        max_end = []
         cur = 0
         for iv in ivs:
             cur = max(cur, iv[1])
             max_end.append(cur)
         intron_index[chrom] = (starts, max_end, ivs)
 
-    return intron_index, hints_by_chain
+    return intron_index, hints_by_chain, chain_scores
 
 
-def chains_at_locus(intron_index, chrom, start0, end0):
-    """Return list of (chain_id, intron_count) for chains overlapping [start0, end0)."""
+def best_chain_at_locus(intron_index, chain_scores, chrom, strand, start0, end0):
+    """Return (chain_id, score) of the highest-scoring chain with intron hints at locus."""
     if chrom not in intron_index:
-        return []
+        return None, 0.0
     starts, max_end, ivs = intron_index[chrom]
-    # Find rightmost intron whose start < end0
     right = bisect.bisect_left(starts, end0)
     if right == 0 or max_end[right - 1] <= start0:
-        return []
-    # Collect all overlapping introns
-    counts = defaultdict(int)
+        return None, 0.0
+
+    local_scores = defaultdict(float)
     for i in range(right):
-        if ivs[i][1] > start0:   # end > locus start → overlaps
-            counts[ivs[i][2]] += 1
-    return sorted(counts.items(), key=lambda x: -x[1])  # descending by count
+        iv_start0, iv_end0, chain_id, iv_strand = ivs[i]
+        if iv_end0 > start0 and iv_strand == strand:
+            local_scores[chain_id] = chain_scores.get((chrom, chain_id), 0.0)
+
+    if not local_scores:
+        return None, 0.0
+    best = max(local_scores, key=local_scores.get)
+    return best, local_scores[best]
+
+
+def get_chain_introns_genome(hints_lines):
+    """frozenset of (start, end) 1-based intron positions from chain's hint lines."""
+    introns = set()
+    for line in hints_lines:
+        parts = line.split('\t')
+        if len(parts) < 9 or parts[2].lower() != 'intron':
+            continue
+        try:
+            introns.add((int(parts[3]), int(parts[4])))
+        except ValueError:
+            pass
+    return frozenset(introns)
+
+
+# ── Interval merge (per strand) ───────────────────────────────────────────────
+
+def merge_by_strand(ivs):
+    """Merge overlapping (chrom, strand, start, end) tuples per strand."""
+    if not ivs:
+        return []
+    ivs = sorted(ivs)
+    merged = [list(ivs[0])]
+    for chrom, strand, start, end in ivs[1:]:
+        last = merged[-1]
+        if chrom == last[0] and strand == last[1] and start <= last[3]:
+            last[3] = max(last[3], end)
+        else:
+            merged.append([chrom, strand, start, end])
+    return merged
 
 
 # ── FASTA extraction ──────────────────────────────────────────────────────────
 
 def fetch_sequence(genome, chrom, start0, end0):
-    """
-    Extract [start0, end0) (0-based) via samtools faidx.
-    Returns the bare sequence string (no header, no newlines).
-    """
-    fa_start = start0 + 1          # samtools uses 1-based inclusive
-    region   = f'{chrom}:{fa_start}-{end0}'
-    result   = subprocess.run(
-        ['samtools', 'faidx', genome, region],
-        capture_output=True, text=True, check=True
+    """Return bare sequence string for [start0, end0) via samtools faidx."""
+    result = subprocess.run(
+        ['samtools', 'faidx', genome, f'{chrom}:{start0 + 1}-{end0}'],
+        capture_output=True, text=True, check=True,
     )
     lines = result.stdout.split('\n')
     return ''.join(lines[1:]).replace('\n', '')
@@ -203,108 +335,118 @@ def main():
     import os
     os.makedirs(args.outdir, exist_ok=True)
 
-    genome_fai = args.genome + '.fai'
-    chrom_sizes = load_chrom_sizes(genome_fai)
+    chrom_sizes = load_chrom_sizes(args.genome + '.fai')
     print(f'[index]  {len(chrom_sizes)} chromosomes', file=sys.stderr)
 
-    print(f'[load]   loading chain-tagged hints from {args.chained_hints}',
-          file=sys.stderr)
-    intron_index, hints_by_chain = load_chained_hints(args.chained_hints)
-    n_chains_total = len(hints_by_chain)
-    print(f'[load]   {n_chains_total} (chrom, chain) pairs', file=sys.stderr)
+    print('[load]   chained hints ...', file=sys.stderr)
+    intron_index, hints_by_chain, chain_scores = load_chained_hints(args.chained_hints)
+    print(f'[load]   {len(hints_by_chain)} (chrom, chain) pairs', file=sys.stderr)
 
-    transcripts = load_transcripts(args.partial_gtf)
-    print(f'[load]   {len(transcripts)} partial transcripts', file=sys.stderr)
+    correct_txs = load_transcripts(args.correct_gtf)
+    correct_idx = build_strand_index(correct_txs)
+    print(f'[load]   {len(correct_txs)} tib_correct transcripts', file=sys.stderr)
 
-    # Filter to transcripts with hint coverage + add flanking
-    with_hints = []
-    for chrom, start, end in transcripts:
-        if chains_at_locus(intron_index, chrom, start, end):
-            s = max(0, start - args.flank)
-            e = min(chrom_sizes.get(chrom, end + args.flank), end + args.flank)
-            with_hints.append((chrom, s, e))
-    print(f'[filter] {len(with_hints)} transcripts have intron hint coverage',
-          file=sys.stderr)
+    orf_index = load_orf_introns(args.orfs_gtf)
+    n_orf = sum(len(v[2]) for v in orf_index.values())
+    print(f'[load]   {n_orf} multi-exon ORF transcripts', file=sys.stderr)
 
-    merged = merge_intervals(with_hints)
-    print(f'[merge]  {len(merged)} loci after merging (flank={args.flank} bp)',
-          file=sys.stderr)
+    partial_txs = load_transcripts(args.partial_gtf)
+    print(f'[load]   {len(partial_txs)} tib_partial transcripts', file=sys.stderr)
 
-    # ── Build per-(locus, chain) records ─────────────────────────────────────
-    out_fa    = os.path.join(args.outdir, 'combined_loci.fa')
-    out_gff   = os.path.join(args.outdir, 'combined_hints.gff')
-    out_mfst  = os.path.join(args.outdir, 'loci_manifest.tsv')
+    # ── Filter and collect eligible loci ─────────────────────────────────────
+    # Keep every partial transcript that is not already covered by a
+    # same-strand tib_correct prediction.  Chain-less loci are emitted as
+    # hint-free FASTA entries so Tiberius still runs ab-initio on them
+    # (option B).  ORF-agrees filter is dropped (option A).
+    eligible  = []
+    n_correct = 0
 
-    total_entries = 0
+    for chrom, start0, end0, strand in partial_txs:
+        if any_overlap(correct_idx, chrom, strand, start0, end0):
+            n_correct += 1
+            continue
+        s = max(0, start0 - args.flank)
+        e = min(chrom_sizes.get(chrom, end0 + args.flank), end0 + args.flank)
+        eligible.append((chrom, strand, s, e))
+
+    print(f'[filter] {n_correct} skipped: tib_correct overlaps same strand', file=sys.stderr)
+    print(f'[filter] {len(eligible)} eligible partial loci', file=sys.stderr)
+
+    merged = merge_by_strand(eligible)
+    print(f'[merge]  {len(merged)} merged loci (flank={args.flank})', file=sys.stderr)
+
+    # ── Build output ──────────────────────────────────────────────────────────
+    out_fa   = os.path.join(args.outdir, 'combined_loci.fa')
+    out_gff  = os.path.join(args.outdir, 'combined_hints.gff')
+    out_mfst = os.path.join(args.outdir, 'loci_manifest.tsv')
+
+    n_entries       = 0
+    n_with_chain    = 0
+    n_without_chain = 0
+
     with open(out_fa,   'w') as fa_fh, \
          open(out_gff,  'w') as gff_fh, \
          open(out_mfst, 'w') as mfst_fh:
 
-        mfst_fh.write('locus_id\tchr\tbed_start\tbed_end\tchain_id\n')
+        mfst_fh.write('locus_id\tchr\tbed_start\tbed_end\tstrand\tchain_id\n')
 
-        for locus_idx, (chrom, bed_start, bed_end) in enumerate(merged):
-            chains = chains_at_locus(intron_index, chrom, bed_start, bed_end)
-            if not chains:
-                continue
-            if args.max_chains:
-                chains = chains[:args.max_chains]
+        for locus_idx, (chrom, strand, bed_start, bed_end) in enumerate(merged):
+            best_chain, _ = best_chain_at_locus(
+                intron_index, chain_scores, chrom, strand, bed_start, bed_end)
 
-            # Fetch the locus sequence once (reused for all chains at this locus)
+            chain_hints = hints_by_chain.get((chrom, best_chain), []) if best_chain else []
+
             seq = fetch_sequence(args.genome, chrom, bed_start, bed_end)
             if not seq:
-                print(f'[warn]   empty sequence for {chrom}:{bed_start}-{bed_end}',
-                      file=sys.stderr)
                 continue
 
-            for chain_id, n_introns in chains:
-                entry_idx = total_entries
-                locus_id  = f'locus_{entry_idx:07d}'
-                total_entries += 1
+            locus_id = f'locus_{n_entries:07d}'
+            n_entries += 1
+            if best_chain:
+                n_with_chain += 1
+            else:
+                n_without_chain += 1
 
-                # FASTA: same sequence, unique header per (locus, chain)
-                fa_fh.write(f'>{locus_id}\n')
-                # Write in 60-char lines
-                for i in range(0, len(seq), 60):
-                    fa_fh.write(seq[i:i+60] + '\n')
+            # FASTA
+            fa_fh.write(f'>{locus_id}\n')
+            for i in range(0, len(seq), 60):
+                fa_fh.write(seq[i:i+60] + '\n')
 
-                # Hints: re-coordinate to locus-local 1-based positions
-                # genome GFF pos (1-based) → local = pos - bed_start (still 1-based)
-                raw_hints = hints_by_chain.get((chrom, chain_id), [])
-                for raw_line in raw_hints:
-                    parts = raw_line.split('\t')
-                    try:
-                        g_start = int(parts[3])
-                        g_end   = int(parts[4])
-                    except (ValueError, IndexError):
-                        continue
-                    # Keep only hints overlapping the locus
-                    if g_start > bed_end or g_end <= bed_start:
-                        continue
-                    local_start = g_start - bed_start
-                    local_end   = g_end   - bed_start
-                    # Clamp to [1, locus_len]
-                    locus_len = bed_end - bed_start
-                    local_start = max(1, local_start)
-                    local_end   = min(locus_len, local_end)
-                    if local_end <= 0 or local_start > locus_len:
-                        continue
-                    parts[0] = locus_id
-                    parts[3] = str(local_start)
-                    parts[4] = str(local_end)
-                    gff_fh.write('\t'.join(parts) + '\n')
+            # Hints (local 1-based coords; include intron + start/stop codons).
+            # Chain-less loci write nothing here → Tiberius runs ab-initio on them.
+            for raw_line in chain_hints:
+                parts = raw_line.split('\t')
+                try:
+                    g_start = int(parts[3])
+                    g_end   = int(parts[4])
+                except (ValueError, IndexError):
+                    continue
+                if g_start > bed_end or g_end <= bed_start:
+                    continue
+                locus_len   = bed_end - bed_start
+                local_start = max(1, g_start - bed_start)
+                local_end   = min(locus_len, g_end - bed_start)
+                if local_end <= 0 or local_start > locus_len:
+                    continue
+                parts[0] = locus_id
+                parts[3] = str(local_start)
+                parts[4] = str(local_end)
+                gff_fh.write('\t'.join(parts) + '\n')
 
-                # Manifest
-                mfst_fh.write(
-                    f'{locus_id}\t{chrom}\t{bed_start}\t{bed_end}\t{chain_id}\n'
-                )
+            chain_id_str = best_chain if best_chain else 'none'
+            mfst_fh.write(
+                f'{locus_id}\t{chrom}\t{bed_start}\t{bed_end}\t{strand}\t{chain_id_str}\n'
+            )
 
             if (locus_idx + 1) % 500 == 0:
-                print(f'[progress] {locus_idx+1}/{len(merged)} loci processed, '
-                      f'{total_entries} entries so far', file=sys.stderr)
+                print(f'[progress] {locus_idx+1}/{len(merged)} loci, '
+                      f'{n_entries} entries so far', file=sys.stderr)
 
-    print(f'[out]    {total_entries} (locus, chain) entries', file=sys.stderr)
-    print(f'[out]    FASTA  : {out_fa}',  file=sys.stderr)
-    print(f'[out]    hints  : {out_gff}', file=sys.stderr)
+    print(f'[out]    {n_entries} rescue loci written '
+          f'({n_with_chain} with chain hints, {n_without_chain} ab-initio)',
+          file=sys.stderr)
+    print(f'[out]    FASTA   : {out_fa}',   file=sys.stderr)
+    print(f'[out]    hints   : {out_gff}',  file=sys.stderr)
     print(f'[out]    manifest: {out_mfst}', file=sys.stderr)
 
 

@@ -37,15 +37,18 @@ SCRIPTS_DIR=${PROJDIR}/scripts
 TIBERIUS_REPO=${TIBERIUS_REPO:-/home/gabriell/Tiberius}
 
 PARTIAL_GTF=${RESULTS_DIR}/tiberius_seqlen/tiberius_lgb_partial.gtf
+CORRECT_GTF=${RESULTS_DIR}/tiberius_seqlen/tiberius_lgb_correct.gtf
 HC_GFF=${RESULTS_DIR}/fix_stop/miniprothint/hc.gff
 MINIPROT_SCORED=${RESULTS_DIR}/fix_stop/miniprot_scored.gff
 GENOME=${RESULTS_DIR}/assembly/genome.fa
+ORFS_DIR=${RESULTS_DIR}/annotate_run009_best_filt_tpm1cov3len300
 OUTDIR=${RESULTS_DIR}/hint_rescue
 
 mkdir -p "${OUTDIR}" "${PROJDIR}/logs"
 
 # ── Input checks ─────────────────────────────────────────────────────────────
-for f in "${PARTIAL_GTF}" "${HC_GFF}" "${MINIPROT_SCORED}" "${GENOME}" "${GENOME}.fai"; do
+for f in "${PARTIAL_GTF}" "${CORRECT_GTF}" "${HC_GFF}" "${MINIPROT_SCORED}" \
+          "${GENOME}" "${GENOME}.fai" "${ORFS_DIR}/orfs.gtf"; do
     [[ -s "${f}" ]] || { echo "ERROR: missing input: ${f}" >&2; exit 1; }
 done
 
@@ -75,9 +78,14 @@ fi
 
 # ── Step 2: build multi-FASTA + hints GFF ────────────────────────────────────
 echo "[$(date -Iseconds)] Building combined FASTA and hints ..."
+ORFS_ARGS="${ORFS_DIR}/orfs.gtf"
+[[ -s "${ORFS_DIR}/orfs.partial.gtf" ]] && ORFS_ARGS="${ORFS_ARGS} ${ORFS_DIR}/orfs.partial.gtf"
+
 python "${SCRIPTS_DIR}/prepare_hint_rescue_loci.py" \
     --partial_gtf   "${PARTIAL_GTF}" \
+    --correct_gtf   "${CORRECT_GTF}" \
     --chained_hints "${CHAINED_HINTS}" \
+    --orfs_gtf      ${ORFS_ARGS} \
     --genome        "${GENOME}" \
     --outdir        "${OUTDIR}" \
     --flank         25000

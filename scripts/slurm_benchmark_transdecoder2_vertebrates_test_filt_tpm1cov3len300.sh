@@ -18,7 +18,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --time=48:00:00
-#SBATCH --array=0-7
+#SBATCH --array=0-8
 #SBATCH --output=/projects/AI-GUSTUS/tiberius_orf_finder/logs/td2_vt_f_%A_%a.out
 #SBATCH --error=/projects/AI-GUSTUS/tiberius_orf_finder/logs/td2_vt_f_%A_%a.err
 
@@ -38,6 +38,7 @@ declare -a SPECIES=(
     "Zootoca_vivipara"
     "Archocentrus_centrarchus"
     "Betta_splendens"
+    "Homo_sapiens"
 )
 species=${SPECIES[$SLURM_ARRAY_TASK_ID]}
 

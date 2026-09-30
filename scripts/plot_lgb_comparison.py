@@ -2,19 +2,21 @@
 
 Supports Vertebrata, Fungi, and Embryophyta test species via --kingdom.
 
-Gene sets per species (12 total):
-  orfs_full          <results-dir>/<sp>/<annot-tag>/orfs.filtered.gtf
-  orfs_lgb3          .../orfs_lgb3_filtered.gtf  (P(not-wrong)>=0.5)
-  orfs_lgb3_correct  orfs_lgb3 filtered to lgb_class "correct"
-  orfs_lgb3_partial  orfs_lgb3 filtered to lgb_class "partial"
-  tib_full           tiberius benchmarking tiberius_seqlen.gtf
-  tib_lgb3           <results-dir>/<sp>/tiberius_lgb_filtered/tiberius_lgb_filtered.gtf
-  tib_lgb3_correct   tib_lgb3 filtered to lgb_class "correct"
-  tib_lgb3_partial   tib_lgb3 filtered to lgb_class "partial"
-  merge_full         orfs_full + tib_full (concatenated)
-  merge_correct      tib_lgb3_correct + orfs_lgb3_correct
-  merge_tib_c_orfs   tib_lgb3_correct + orfs_full
-  braker3            braker3 benchmarking braker3.gtf
+Gene sets per species (14 total):
+  orfs_full               <results-dir>/<sp>/<annot-tag>/orfs.filtered.gtf
+  orfs_lgb3               .../orfs_lgb3_filtered.gtf  (P(not-wrong)>=0.5)
+  orfs_lgb3_correct       orfs_lgb3 filtered to lgb_class "correct"
+  orfs_lgb3_partial       orfs_lgb3 filtered to lgb_class "partial"
+  tib_full                tiberius benchmarking tiberius_seqlen.gtf
+  tib_lgb3                <results-dir>/<sp>/tiberius_lgb_filtered/tiberius_lgb_filtered.gtf
+  tib_lgb3_correct        tib_lgb3 filtered to lgb_class "correct"
+  tib_lgb3_partial        tib_lgb3 filtered to lgb_class "partial"
+  merge_full              orfs_full + tib_full (concatenated)
+  merge_correct           tib_lgb3_correct + orfs_lgb3_correct
+  merge_tib_c_orfs        tib_lgb3_correct + orfs_full
+  tib_correct_hint_partial        tib_lgb3 correct + partial where chain introns ⊆ tx introns
+  merge_correct_hint_partial_orfs tib_correct_hint_partial + orfs_full
+  braker3                 braker3 benchmarking braker3.gtf
 
 Outputs:
   <out-dir>/lgb_comparison_table.tsv
@@ -104,25 +106,35 @@ GS_ORDER = [
     "tib_lgb3",
     "tib_lgb3_correct",
     "tib_lgb3_partial",
+    "hint_rescue",
+    "tib_c_plus_rescue",
+    "tib_c_plus_rescue_orfs",
     "merge_full",
     "merge_correct",
     "merge_tib_c_orfs",
+    "tib_correct_hint_partial",
+    "merge_correct_hint_partial_orfs",
     "braker3",
 ]
 
 GS_LABELS = {
-    "orfs_full":         "ORFs\n(full)",
-    "orfs_lgb3":         "ORFs\n(lgb3)",
-    "orfs_lgb3_correct": "ORFs\n(lgb3 correct)",
-    "orfs_lgb3_partial": "ORFs\n(lgb3 partial)",
-    "tib_full":          "Tib\n(full)",
-    "tib_lgb3":          "Tib\n(lgb3)",
-    "tib_lgb3_correct":  "Tib\n(lgb3 correct)",
-    "tib_lgb3_partial":  "Tib\n(lgb3 partial)",
-    "merge_full":        "ORFs+Tib\n(full)",
-    "merge_correct":     "Tib-c\n+ORFs-c",
-    "merge_tib_c_orfs":  "Tib-c\n+ORFs",
-    "braker3":           "BRAKER3",
+    "orfs_full":              "ORFs\n(full)",
+    "orfs_lgb3":              "ORFs\n(lgb3)",
+    "orfs_lgb3_correct":      "ORFs\n(lgb3 correct)",
+    "orfs_lgb3_partial":      "ORFs\n(lgb3 partial)",
+    "tib_full":               "Tib\n(full)",
+    "tib_lgb3":               "Tib\n(lgb3)",
+    "tib_lgb3_correct":       "Tib\n(lgb3 correct)",
+    "tib_lgb3_partial":       "Tib\n(lgb3 partial)",
+    "hint_rescue":            "Hint\nrescue",
+    "tib_c_plus_rescue":      "Tib-c\n+rescue",
+    "tib_c_plus_rescue_orfs": "Tib-c\n+rescue+ORFs",
+    "merge_full":             "ORFs+Tib\n(full)",
+    "merge_correct":          "Tib-c\n+ORFs-c",
+    "merge_tib_c_orfs":       "Tib-c\n+ORFs",
+    "tib_correct_hint_partial":        "Tib\n(c+hint-p)",
+    "merge_correct_hint_partial_orfs": "Tib(c+hint-p)\n+ORFs",
+    "braker3":                "BRAKER3",
 }
 
 COLORS = {"S": "#1f77b4", "P": "#ff7f0e", "F1": "#2ca02c"}
@@ -132,9 +144,9 @@ COLORS = {"S": "#1f77b4", "P": "#ff7f0e", "F1": "#2ca02c"}
 # GTF preparation helpers
 # ---------------------------------------------------------------------------
 
-def _filter_by_class(src: Path, cls: str, out: Path) -> Path | None:
+def _filter_by_class(src: Path, cls: str, out: Path, force: bool = False) -> Path | None:
     """Write lines from src containing lgb_class "<cls>" to out."""
-    if out.exists() and out.stat().st_size > 0:
+    if not force and out.exists() and out.stat().st_size > 0:
         return out
     with src.open() as fin, out.open("w") as fout:
         for line in fin:
@@ -143,9 +155,9 @@ def _filter_by_class(src: Path, cls: str, out: Path) -> Path | None:
     return out if out.stat().st_size > 0 else None
 
 
-def _merge_gtfs(srcs: list[Path], out: Path) -> Path | None:
+def _merge_gtfs(srcs: list[Path], out: Path, force: bool = False) -> Path | None:
     """Concatenate GTF files."""
-    if out.exists() and out.stat().st_size > 0:
+    if not force and out.exists() and out.stat().st_size > 0:
         return out
     with out.open("wb") as fout:
         for src in srcs:
@@ -158,10 +170,11 @@ def _merge_gtfs(srcs: list[Path], out: Path) -> Path | None:
 # gffcompare helpers
 # ---------------------------------------------------------------------------
 
-def _run_gffcompare(ref: Path, query_gtf: Path, prefix: Path) -> Path | None:
+def _run_gffcompare(ref: Path, query_gtf: Path, prefix: Path,
+                    force: bool = False) -> Path | None:
     """Extract CDS from query_gtf, run gffcompare, return .stats Path or None."""
     cds_file = Path(str(prefix) + "_cds.gff")
-    if not cds_file.exists() or cds_file.stat().st_size == 0:
+    if force or not cds_file.exists() or cds_file.stat().st_size == 0:
         subprocess.run(
             f"grep -w CDS {query_gtf} > {cds_file}",
             shell=True, check=False
@@ -205,7 +218,8 @@ def _f1(s: float, p: float) -> float:
 # Per-species evaluation
 # ---------------------------------------------------------------------------
 
-def evaluate_species(sp: str, cfg: dict, work_root: Path) -> list[dict]:
+def evaluate_species(sp: str, cfg: dict, work_root: Path,
+                     force: bool = False) -> list[dict]:
     results_dir: Path = cfg["results_dir"]
     annot_tag: str    = cfg["annot_tag"]
     bench_group: str  = cfg["bench_group"]
@@ -237,16 +251,21 @@ def evaluate_species(sp: str, cfg: dict, work_root: Path) -> list[dict]:
         else:
             print(f"  [skip] {gs}: {src}", flush=True)
 
-    _add_src("orfs_full",  orfs_full_src)
-    _add_src("orfs_lgb3",  orfs_lgb3_src)
-    _add_src("tib_full",   tib_full_src)
-    _add_src("tib_lgb3",   tib_lgb3_src)
-    _add_src("braker3",    braker3_src)
+    tib_chp_src        = sp_dir / "tiberius_lgb_filtered/tib_correct_hint_partial.gtf"
+    hint_rescue_src    = sp_dir / "hint_rescue/tiberius_hint_rescue.gtf"
+
+    _add_src("orfs_full",                orfs_full_src)
+    _add_src("orfs_lgb3",                orfs_lgb3_src)
+    _add_src("tib_full",                 tib_full_src)
+    _add_src("tib_lgb3",                 tib_lgb3_src)
+    _add_src("hint_rescue",              hint_rescue_src)
+    _add_src("tib_correct_hint_partial", tib_chp_src)
+    _add_src("braker3",                  braker3_src)
 
     for cls in ("correct", "partial"):
         if "orfs_lgb3" in gtfs:
             out = sp_work / f"orfs_lgb3_{cls}.gtf"
-            result = _filter_by_class(gtfs["orfs_lgb3"], cls, out)
+            result = _filter_by_class(gtfs["orfs_lgb3"], cls, out, force=force)
             if result:
                 gtfs[f"orfs_lgb3_{cls}"] = result
             else:
@@ -254,7 +273,7 @@ def evaluate_species(sp: str, cfg: dict, work_root: Path) -> list[dict]:
 
         if "tib_lgb3" in gtfs:
             out = sp_work / f"tib_lgb3_{cls}.gtf"
-            result = _filter_by_class(gtfs["tib_lgb3"], cls, out)
+            result = _filter_by_class(gtfs["tib_lgb3"], cls, out, force=force)
             if result:
                 gtfs[f"tib_lgb3_{cls}"] = result
             else:
@@ -263,21 +282,43 @@ def evaluate_species(sp: str, cfg: dict, work_root: Path) -> list[dict]:
     # Merged sets
     if "orfs_full" in gtfs and "tib_full" in gtfs:
         out = sp_work / "merge_full.gtf"
-        result = _merge_gtfs([gtfs["orfs_full"], gtfs["tib_full"]], out)
+        result = _merge_gtfs([gtfs["orfs_full"], gtfs["tib_full"]], out, force=force)
         if result:
             gtfs["merge_full"] = result
 
     if "tib_lgb3_correct" in gtfs and "orfs_lgb3_correct" in gtfs:
         out = sp_work / "merge_correct.gtf"
-        result = _merge_gtfs([gtfs["tib_lgb3_correct"], gtfs["orfs_lgb3_correct"]], out)
+        result = _merge_gtfs([gtfs["tib_lgb3_correct"], gtfs["orfs_lgb3_correct"]], out, force=force)
         if result:
             gtfs["merge_correct"] = result
 
     if "tib_lgb3_correct" in gtfs and "orfs_full" in gtfs:
         out = sp_work / "merge_tib_c_orfs.gtf"
-        result = _merge_gtfs([gtfs["tib_lgb3_correct"], gtfs["orfs_full"]], out)
+        result = _merge_gtfs([gtfs["tib_lgb3_correct"], gtfs["orfs_full"]], out, force=force)
         if result:
             gtfs["merge_tib_c_orfs"] = result
+
+    if "tib_correct_hint_partial" in gtfs and "orfs_full" in gtfs:
+        out = sp_work / "merge_correct_hint_partial_orfs.gtf"
+        result = _merge_gtfs([gtfs["tib_correct_hint_partial"], gtfs["orfs_full"]], out, force=force)
+        if result:
+            gtfs["merge_correct_hint_partial_orfs"] = result
+
+    # hint-rescue combos: tib_lgb3_correct + rescue, and same + all orfs
+    if "tib_lgb3_correct" in gtfs and "hint_rescue" in gtfs:
+        out = sp_work / "tib_c_plus_rescue.gtf"
+        result = _merge_gtfs([gtfs["tib_lgb3_correct"], gtfs["hint_rescue"]], out, force=force)
+        if result:
+            gtfs["tib_c_plus_rescue"] = result
+
+    if "tib_lgb3_correct" in gtfs and "hint_rescue" in gtfs and "orfs_full" in gtfs:
+        out = sp_work / "tib_c_plus_rescue_orfs.gtf"
+        result = _merge_gtfs(
+            [gtfs["tib_lgb3_correct"], gtfs["hint_rescue"], gtfs["orfs_full"]],
+            out, force=force,
+        )
+        if result:
+            gtfs["tib_c_plus_rescue_orfs"] = result
 
     # Run gffcompare for each gene set in canonical order
     rows = []
@@ -286,7 +327,7 @@ def evaluate_species(sp: str, cfg: dict, work_root: Path) -> list[dict]:
         if gtf is None:
             continue
         print(f"  gffcompare: {gs}", flush=True)
-        stats_path = _run_gffcompare(ref, gtf, sp_work / gs)
+        stats_path = _run_gffcompare(ref, gtf, sp_work / gs, force=force)
         if stats_path is None:
             print(f"    [warn] no stats", flush=True)
             continue
@@ -407,6 +448,9 @@ def main(argv: list[str] | None = None) -> int:
                     help="Override benchmarking group name Vertebrata/Fungi/Embryophyta.")
     ap.add_argument("--species",  nargs="*", default=None,
                     help="Species to evaluate (default: all for the kingdom).")
+    ap.add_argument("--force", action="store_true",
+                    help="Recompute all intermediate GTFs and gffcompare stats, "
+                         "ignoring any cached files in gffcompare_runs/.")
     args = ap.parse_args(argv)
 
     cfg = dict(KINGDOM_CONFIGS[args.kingdom])
@@ -431,7 +475,7 @@ def main(argv: list[str] | None = None) -> int:
 
     all_rows: list[dict] = []
     for sp in cfg["species"]:
-        all_rows.extend(evaluate_species(sp, cfg, work_root))
+        all_rows.extend(evaluate_species(sp, cfg, work_root, force=args.force))
 
     if not all_rows:
         sys.exit("No results produced — check paths and gffcompare installation.")

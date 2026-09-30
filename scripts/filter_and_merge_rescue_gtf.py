@@ -90,15 +90,19 @@ def load_hints(hints_gff):
 # ── Load manifest ─────────────────────────────────────────────────────────────
 
 def load_manifest(manifest_tsv):
-    offset = {}   # locus_id -> (chr, bed_start)
+    # columns: locus_id  chr  bed_start  bed_end  strand  chain_id
+    offset = {}   # locus_id -> (chr, bed_start, strand)
     with open(manifest_tsv) as fh:
         next(fh)  # header
         for line in fh:
             parts = line.rstrip('\n').split('\t')
-            if len(parts) < 3:
+            if len(parts) < 5:
                 continue
-            locus_id, chrom, bed_start = parts[0], parts[1], int(parts[2])
-            offset[locus_id] = (chrom, bed_start)
+            locus_id  = parts[0]
+            chrom     = parts[1]
+            bed_start = int(parts[2])
+            strand    = parts[4] if len(parts) > 4 else None
+            offset[locus_id] = (chrom, bed_start, strand)
     return offset
 
 
@@ -165,37 +169,44 @@ def main():
 
     print(f'[filter] {len(tx_lines)} transcripts loaded from raw GTF', file=sys.stderr)
 
-    n_no_hint      = 0
+    n_no_locus     = 0     # locus_id not in manifest
     n_wrong_strand = 0
     n_no_overlap   = 0
+    n_chainless    = 0     # accepted from ab-initio (chain-less) loci
     candidates     = []   # (fingerprint, sort_key, uid, genome_lines)
 
     for uid, lines in tx_lines.items():
         meta     = tx_meta[uid]
         locus_id = meta['locus_id']
 
-        if locus_id not in locus_hints:
-            n_no_hint += 1
+        # Manifest lookup is mandatory (we need chrom + bed_start to project coords)
+        if locus_id not in offset:
+            n_no_locus += 1
             continue
+        chrom, bed_start, manifest_strand = offset[locus_id]
 
-        hint_info = locus_hints[locus_id]
-
-        # 1. Strand check (skip if no intron hints — no strand info)
-        if hint_info['strand'] is not None and meta['strand'] != hint_info['strand']:
+        # Manifest-strand cross-check
+        if manifest_strand is not None and meta['strand'] != manifest_strand:
             n_wrong_strand += 1
             continue
 
-        # 2. Transcript span must overlap the hint-covered region (local coords)
-        if (meta['local_max'] < hint_info['span_start'] or
-                meta['local_min'] > hint_info['span_end']):
-            n_no_overlap += 1
-            continue
+        # Chain-less loci (absent from combined_hints.gff) skip hint-based filters
+        # and are accepted based on the manifest strand check alone.
+        if locus_id in locus_hints:
+            hint_info = locus_hints[locus_id]
 
-        # Convert to genome coordinates
-        if locus_id not in offset:
-            n_no_hint += 1
-            continue
-        chrom, bed_start = offset[locus_id]
+            # 1. Strand check against hint dominant strand
+            if hint_info['strand'] is not None and meta['strand'] != hint_info['strand']:
+                n_wrong_strand += 1
+                continue
+
+            # 2. Transcript span must overlap the hint-covered region (local coords)
+            if (meta['local_max'] < hint_info['span_start'] or
+                    meta['local_min'] > hint_info['span_end']):
+                n_no_overlap += 1
+                continue
+        else:
+            n_chainless += 1
 
         genome_lines = []
         cds_genome   = []
@@ -223,7 +234,8 @@ def main():
         candidates.append((fp, sort_key, uid, genome_lines))
 
     print(f'[filter] dropped: {n_wrong_strand} wrong-strand | '
-          f'{n_no_overlap} outside hint region | {n_no_hint} no hint info',
+          f'{n_no_overlap} outside hint region | {n_no_locus} no manifest entry | '
+          f'{n_chainless} accepted from chain-less loci',
           file=sys.stderr)
 
     # Deduplicate by CDS fingerprint (keep first occurrence of each structure)

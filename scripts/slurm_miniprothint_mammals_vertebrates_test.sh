@@ -95,6 +95,51 @@ else
     echo "[$(date -Iseconds)] Reusing ${SCORED_GFF}"
 fi
 
+# Sanitise scored.gff: miniprot_boundary_scorer occasionally outputs merged/truncated lines.
+# Keep only valid 9-column GFF records with a known feature type and an attribute field.
+python3 -c "
+import sys
+FEATURES = {'mRNA','CDS','intron','stop_codon','start_codon'}
+gff = sys.argv[1]
+tmp = gff + '.clean'
+kept = dropped = 0
+with open(gff) as f, open(tmp, 'w') as out:
+    for line in f:
+        cols = line.rstrip('\n').split('\t')
+        if len(cols) == 9 and cols[0] and cols[2] in FEATURES and '=' in cols[8]:
+            out.write(line); kept += 1
+        else:
+            dropped += 1
+import os; os.replace(tmp, gff)
+print(f'GFF sanitised: kept {kept}, dropped {dropped}', flush=True)
+
+# Pass 2: remove child records whose mRNA parent was lost during sanitisation
+mrna_ids = set()
+with open(gff) as f:
+    for line in f:
+        cols = line.rstrip('\n').split('\t')
+        if cols[2] == 'mRNA':
+            for attr in cols[8].split(';'):
+                attr = attr.strip()
+                if attr.startswith('ID='):
+                    mrna_ids.add(attr[3:].strip()); break
+tmp2 = gff + '.orphan_clean'
+kept2 = dropped2 = 0
+with open(gff) as f, open(tmp2, 'w') as out:
+    for line in f:
+        cols = line.rstrip('\n').split('\t')
+        if cols[2] == 'mRNA':
+            out.write(line); kept2 += 1
+        else:
+            parent = next((a.strip()[7:] for a in cols[8].split(';') if a.strip().startswith('Parent=')), None)
+            if parent in mrna_ids:
+                out.write(line); kept2 += 1
+            else:
+                dropped2 += 1
+os.replace(tmp2, gff)
+print(f'Orphan filter: kept {kept2}, dropped {dropped2}', flush=True)
+" "${SCORED_GFF}"
+
 # ── Step 2: miniprothint ──────────────────────────────────────────────────────
 echo "[$(date -Iseconds)] Running miniprothint.py ..."
 run_tool miniprothint.py \

@@ -26,9 +26,13 @@ cd "${PROJDIR}"
 
 echo "[$(date -Iseconds)] Starting LGB gene-set comparison for Embryophyta …"
 
+FORCE_FLAG=""
+[[ "${FORCE:-0}" == "1" ]] && FORCE_FLAG="--force"
+
 python scripts/plot_lgb_comparison.py \
     --kingdom embryophyta \
-    --out-dir "${OUTDIR}"
+    --out-dir "${OUTDIR}" \
+    ${FORCE_FLAG}
 
 echo "[$(date -Iseconds)] done → ${OUTDIR}"
 if [[ -s "${OUTDIR}/lgb_comparison_table.tsv" ]]; then

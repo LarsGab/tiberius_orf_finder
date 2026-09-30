@@ -79,10 +79,10 @@ GFF_COLOUR = {
 }
 
 NUMERIC_FEATURES = [
-    "n_exons", "cds_length_nt", "dist_upstream_stop_nt", "n_upstream_atgs",
+    "n_exons", "dist_upstream_stop_nt", "n_upstream_atgs",
     "n_overlapping_alignments", "best_identity", "best_norm_bitscore",
-    "best_target_coverage", "frac_introns_supported", "cds_length_pct",
-    "n_overlapping_alignments_pct",
+    "best_target_coverage", "best_protein_coverage", "frac_introns_supported",
+    "cds_length_pct", "n_overlapping_alignments_pct",
     "protein_extends_5prime_codons", "protein_extends_3prime_codons",
 ]
 BINARY_FEATURES = [
@@ -97,18 +97,28 @@ CATEGORICAL_FEATURES = {
 
 # ─── data helpers ──────────────────────────────────────────────────────────
 
-def load_data(base_dir: Path, annot_tag: str) -> pd.DataFrame:
+def load_data(base_dir: Path, sources: list[tuple[str, str]],
+              exclude_species: set[str] | None = None) -> pd.DataFrame:
+    """Load features from one or more <base_dir>/<species>/<subdir>/<fname> paths.
+
+    sources: list of (subdir, filename) tuples. Each loaded transcript gets a
+    'source' column set to the subdir (e.g. 'annotate_run001_e300' or 'tiberius').
+    """
+    exclude_species = exclude_species or set()
     frames = []
     for sp_dir in sorted(base_dir.iterdir()):
-        if not sp_dir.is_dir():
+        if not sp_dir.is_dir() or sp_dir.name in exclude_species:
             continue
-        tsv = sp_dir / annot_tag / "orf_features.tsv"
-        if tsv.exists():
-            df = pd.read_csv(tsv, sep="\t", low_memory=False)
-            df["species"] = sp_dir.name
-            frames.append(df)
+        for subdir, fname in sources:
+            tsv = sp_dir / subdir / fname
+            if tsv.exists():
+                df = pd.read_csv(tsv, sep="\t", low_memory=False)
+                df["species"] = sp_dir.name
+                df["source"] = subdir
+                frames.append(df)
     if not frames:
-        sys.exit(f"No orf_features.tsv found under {base_dir}")
+        srcs = ", ".join(f"{s}/{f}" for s, f in sources)
+        sys.exit(f"No features found under {base_dir}/*/{{{srcs}}}")
     return pd.concat(frames, ignore_index=True)
 
 
@@ -251,6 +261,15 @@ def main():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--base-dir",   required=True, type=Path)
     p.add_argument("--annot-tag",  default="annotate_epoch_74_filt_tpm1cov3len300_lorf")
+    p.add_argument("--features-filename", default="orf_features.tsv",
+                   help="TSV filename under <base-dir>/<species>/<annot-tag>/ (default: orf_features.tsv)")
+    p.add_argument("--sources", nargs="+", default=None,
+                   metavar="subdir/filename",
+                   help="Multiple training sources as 'subdir/filename' pairs. "
+                        "Overrides --annot-tag/--features-filename when given. "
+                        "Example: --sources annotate_run001_e300/orf_features.tsv tiberius/tib_features.tsv")
+    p.add_argument("--exclude-species", nargs="*", default=[],
+                   help="Species directory names to skip")
     p.add_argument("--out-dir",    required=True, type=Path)
     p.add_argument("--max-depth",  type=int, default=None)
     p.add_argument("--n-estimators", type=int, default=500)
@@ -262,9 +281,22 @@ def main():
     args.out_dir.mkdir(parents=True, exist_ok=True)
     np.random.seed(42)
 
-    print("Loading data …", flush=True)
-    df = load_data(args.base_dir, args.annot_tag)
-    print(f"  {len(df):,} transcripts, {df['species'].nunique()} species", flush=True)
+    if args.sources:
+        sources: list[tuple[str, str]] = []
+        for s in args.sources:
+            if "/" not in s:
+                sys.exit(f"--sources entry must be 'subdir/filename', got: {s}")
+            subdir, fname = s.split("/", 1)
+            sources.append((subdir, fname))
+    else:
+        sources = [(args.annot_tag, args.features_filename)]
+
+    print(f"Loading data from {len(sources)} source(s): "
+          f"{', '.join(f'{s}/{f}' for s, f in sources)} …", flush=True)
+    df = load_data(args.base_dir, sources,
+                   exclude_species=set(args.exclude_species))
+    print(f"  {len(df):,} transcripts, {df['species'].nunique()} species, "
+          f"per source: {df['source'].value_counts().to_dict()}", flush=True)
 
     X_all, feat_names = build_feature_matrix(df)
     y_all = df["gffcompare_class"].map(LABEL_MAP)
@@ -308,7 +340,7 @@ def main():
 
     # score all transcripts
     proba_all = clf.predict_proba(X_all)   # shape (n, 3)
-    scores_df = df[["transcript_id", "species", "gffcompare_class",
+    scores_df = df[["transcript_id", "species", "source", "gffcompare_class",
                     "lorf_class", "support_level"]].copy()
     scores_df["prob_wrong"]    = proba_all[:, 0]
     scores_df["prob_partial"]  = proba_all[:, 1]
